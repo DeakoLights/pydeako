@@ -4,3 +4,4 @@ pydeako module provides the following:
  - implementation of a Deako socket client
  - mdns discovery client
 """
+from . import models
