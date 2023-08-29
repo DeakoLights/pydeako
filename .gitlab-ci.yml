@@ -1,0 +1,64 @@
+stages:
+  - container
+  - test
+  - push
+
+variables:
+  DOCKER_TLS_CERTDIR: "/certs/${CI_JOB_ID}" # Create a cert dir per job
+  DOCKER_DRIVER: overlay2
+  IMAGE: "macaroni"
+  TAG: "latest"
+
+  # Runner tags
+  RUNNER_AWS_SMALL: "cloud_aws_t3.small"
+
+.container_build: &container_build
+  stage: container
+  image: docker:23.0.4-dind-alpine3.17
+  services:
+    - docker:dind
+  tags:
+    - $RUNNER_AWS_SMALL
+  script:
+    - docker login -u $DOCKER_DEPLOY_USERNAME -p $DOCKER_DEPLOY_PASSWORD $DOCKER_REGISTRY_URL
+    - docker pull $CI_REGISTRY_IMAGE/$IMAGE:latest || true
+    - > 
+      docker build 
+      --build-arg BUILDKIT_INLINE_CACHE=1
+      --cache-from $CI_REGISTRY_IMAGE/$IMAGE:latest
+      --tag build-env
+      .
+    - docker tag build-env $CI_REGISTRY_IMAGE/$IMAGE:$TAG
+    - docker push $CI_REGISTRY_IMAGE/$IMAGE:$TAG
+  cache: {}
+  interruptible: true
+
+push_branch_container:
+  <<: *container_build
+  only:
+    - branches
+  except:
+    refs:
+      - main
+  variables:
+    TAG: "${CI_COMMIT_REF_SLUG}"
+
+.test_base: &test_base
+  stage: test
+  only:
+    - branches
+  except:
+    refs:
+      - main
+  image: $CI_REGISTRY_IMAGE/$IMAGE:${CI_COMMIT_REF_SLUG}
+
+lint:
+  <<: *test_base
+  script:
+    - pylint pydeako
+    - pycodestyle pydeako
+
+test:
+  <<: *test_base
+  script:
+    - pytest pydeako
