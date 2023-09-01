@@ -15,7 +15,25 @@ Within a particular ecosystem, there may be a common way of installing things, s
 5. `pip install -r requirements_test.txt`
 
 ## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+
+### `pydeako` mdns discovery client
+
+```
+import asyncio
+from pydeako import discover
+
+async def _discover():
+    d = discover.DeakoDiscoverer()
+    try:
+        address = await d.get_address()
+        print(f"Found deako device at {address}!")
+    except discover.DevicesNotFoundException:
+        print("No devices found!")
+        pass
+
+if __name__ == "__main__":
+    asyncio.run(_discover())
+```
 
 ## Support
 Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
