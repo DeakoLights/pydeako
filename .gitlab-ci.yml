@@ -45,6 +45,8 @@ push_branch_container:
 
 .test_base: &test_base
   stage: test
+  tags:
+    - $RUNNER_AWS_SMALL
   only:
     - branches
   except:
