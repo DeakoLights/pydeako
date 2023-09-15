@@ -1,5 +1,5 @@
 """
-Deako connection to local integration.
+Deako device discovery via zeroconf.
 """
 
 from asyncio import sleep
@@ -18,7 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class DevicesNotFoundException(Exception):
-    """no devices found."""
+    """No devices found."""
 
     def __init__(
         self,
@@ -30,7 +30,7 @@ class DevicesNotFoundException(Exception):
 
 
 class DeakoDiscoverer(ServiceBrowser):
-    """zeroconf browser with stored addresses."""
+    """Zeroconf browser with stored addresses."""
 
     address_pool: _AddressPool
     zeroconf: Zeroconf
@@ -52,7 +52,7 @@ class DeakoDiscoverer(ServiceBrowser):
     async def get_address(self) -> str:
         """
         Get an address from the pool of available addresses.
-        Times out after some time.
+        Times out after TIMEOUT_S.
         """
         total_time = 0.0
         while (
@@ -73,7 +73,7 @@ class DeakoDiscoverer(ServiceBrowser):
 
 
 class DeakoListener(ServiceListener):
-    """listener class that satisfies the interface for zeroconf browsers."""
+    """Listener class that satisfies the interface for zeroconf browsers."""
 
     def __init__(
         self, device_address_callback, device_address_removed_callback
