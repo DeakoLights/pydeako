@@ -36,11 +36,9 @@ class _SocketConnection:
 
     def close_socket(self) -> None:
         """Close socket."""
-        if self.sock is None:
-            _LOGGER.error("No socket to close")
-            raise NoSocketException()
-        self.sock.close()
-        self.sock = None
+        if self.sock is not None:
+            self.sock.close()
+            self.sock = None
 
     async def send_bytes(self, _bytes: bytes) -> None:
         """Send data to socket."""
