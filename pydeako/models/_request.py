@@ -9,14 +9,14 @@ from . import _const
 
 
 def __base_request(
-    destination: str = _const.DESTINATION,
-    source: str = _const.SOURCE,
-    transaction_id: str = str(uuid4()),
+    destination: str | None = None,
+    source: str | None = None,
+    transaction_id: str | None = None,
 ) -> dict:
     return {
-        "transactionId": transaction_id,
-        "dst": destination,
-        "src": source,
+        "transactionId": transaction_id or str(uuid4()),
+        "dst": destination or _const.DESTINATION,
+        "src": source or _const.SOURCE,
     }
 
 
