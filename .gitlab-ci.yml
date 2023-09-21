@@ -2,6 +2,8 @@ stages:
   - container
   - test
   - push
+  - cut
+  - distribute
 
 variables:
   DOCKER_TLS_CERTDIR: "/certs/${CI_JOB_ID}" # Create a cert dir per job
@@ -32,6 +34,14 @@ variables:
     - docker push $CI_REGISTRY_IMAGE/$IMAGE:$TAG
   cache: {}
   interruptible: true
+
+push_latest_container:
+  <<: *container_build
+  only:
+    refs:
+      - main
+  variables:
+    TAG: "latest"
 
 push_branch_container:
   <<: *container_build
@@ -64,3 +74,55 @@ test:
   <<: *test_base
   script:
     - pytest pydeako
+
+.cut-base: &cut-base
+  stage: cut
+  image: $CI_REGISTRY_IMAGE/$IMAGE:latest
+  tags:
+    - $RUNNER_AWS_SMALL
+  only:
+    refs:
+      - main
+  when: manual
+  before_script:
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | ssh-add -
+    - echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts # https://docs.gitlab.com/ee/ci/ssh_keys/#verifying-the-ssh-host-keys
+    - chmod 644 ~/.ssh/known_hosts
+    - git config --global user.email "software@deako.com"
+    - git config --global user.name "Macroni"
+  script:
+    - old_version_number=$(grep 'version =' pyproject.toml | sed -n 's/.*version = "\(.*\)"/\1/p')
+    - bump2version $BUMP_TYPE
+    - new_version_number=$(grep 'version =' pyproject.toml | sed -n 's/.*version = "\(.*\)"/\1/p')
+    - git checkout -b release/$new_version_number
+    - git add .
+    - git commit -m "Bumping version $old_version_number to $new_version_number"
+    - git push origin release/$new_version_number
+
+cut-patch:
+  <<: *cut-base
+  variables:
+    BUMP_TYPE: patch
+
+cut-minor:
+  <<: *cut-base
+  variables:
+    BUMP_TYPE: minor
+
+cut-major:
+  <<: *cut-base
+  variables:
+    BUMP_TYPE: major
+
+distribute:
+  stage: distribute
+  image: $CI_REGISTRY_IMAGE/$IMAGE:latest
+  tags:
+    - $RUNNER_AWS_SMALL
+  only:
+    refs:
+      - /^release\/.*/
+  script:
+    - python -m build
+    - twine upload -u $PYPI_USERNAME -p $PYPI_PASSWORD dist/*
