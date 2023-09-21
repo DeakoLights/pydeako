@@ -6,7 +6,9 @@ import pytest
 from mock import AsyncMock, Mock, patch
 
 from ..discover import DevicesNotFoundException
+from ..models import RequestType
 from ._manager import _Manager, CONNECTION_TIMEOUT_S
+from ._request import _Request
 
 
 def test_init():
@@ -286,3 +288,24 @@ async def test_process_queue_item_no_connection():
 
     queue_mock.get.assert_called_once()
     queue_mock.put.assert_called_once_with(request)
+    queue_mock.task_done.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_process_queue_item_no_connection_ping_dumped():
+    """
+    Test _Manager.process_queue_item with no active connection.
+    Dumps the ping request.
+    """
+    request = _Request({"type": RequestType.PING})
+    queue_mock = AsyncMock()
+
+    manager = _Manager(AsyncMock(), Mock())
+
+    manager.message_queue = queue_mock
+    queue_mock.get.return_value = request
+
+    await manager.process_queue_item()
+
+    queue_mock.get.assert_called_once()
+    queue_mock.task_done.assert_called_once()
