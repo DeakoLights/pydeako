@@ -9,3 +9,6 @@ RUN pip3 install -r requirements.txt
 COPY requirements_test.txt requirements_test.txt
 
 RUN pip3 install -r requirements_test.txt
+
+# for distribution
+RUN pip3 install build twine bump2version
