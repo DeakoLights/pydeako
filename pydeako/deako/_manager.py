@@ -14,6 +14,7 @@ from ..models import (
     device_list_request,
     device_ping_request,
     state_change_request,
+    RequestType,
     ResponseType,
 )
 from .utils import _Connection
@@ -164,4 +165,8 @@ class _Manager:
             request.complete_callback()
         else:
             _LOGGER.error("No connection to send data to")
-            await self.message_queue.put(request)
+            if request.get_type() == RequestType.PING:
+                # dump this request, no longer needed
+                self.message_queue.task_done()
+            else:
+                await self.message_queue.put(request)

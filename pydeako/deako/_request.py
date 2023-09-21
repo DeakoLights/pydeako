@@ -24,6 +24,10 @@ class _Request:
         """Get string representation of request."""
         return json.dumps(self.body)
 
+    def get_type(self) -> str | None:
+        """Get the type of the request."""
+        return self.body.get("type")
+
     def complete_callback(self):
         """Call the completed request callback if applicable."""
         if self.completed_callback is not None:
