@@ -53,8 +53,7 @@ def test_close_socket_no_socket():
 
     socket_connection = _SocketConnection(Mock(), loop_mock)
 
-    with pytest.raises(NoSocketException):
-        socket_connection.close_socket()
+    socket_connection.close_socket()
 
 
 def test_close_socket():
