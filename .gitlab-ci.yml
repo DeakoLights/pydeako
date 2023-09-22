@@ -87,6 +87,7 @@ test:
   before_script:
     - eval $(ssh-agent -s)
     - echo "$SSH_PRIVATE_KEY" | ssh-add -
+    - mkdir -p ~/.ssh
     - echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts # https://docs.gitlab.com/ee/ci/ssh_keys/#verifying-the-ssh-host-keys
     - chmod 644 ~/.ssh/known_hosts
     - git config --global user.email "software@deako.com"
