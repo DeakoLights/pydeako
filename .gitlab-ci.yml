@@ -83,6 +83,8 @@ test:
   only:
     refs:
       - main
+  variables:
+    GIT_STRATEGY: clone # clone entire repo instead of reusing workspace
   when: manual
   before_script:
     - eval $(ssh-agent -s)
