@@ -83,8 +83,6 @@ test:
   only:
     refs:
       - main
-  variables:
-    GIT_STRATEGY: clone # clone entire repo instead of reusing workspace
   when: manual
   before_script:
     - eval $(ssh-agent -s)
@@ -106,16 +104,19 @@ test:
 cut-patch:
   <<: *cut-base
   variables:
+    GIT_STRATEGY: clone # clone entire repo instead of reusing workspace
     BUMP_TYPE: patch
 
 cut-minor:
   <<: *cut-base
   variables:
+    GIT_STRATEGY: clone # clone entire repo instead of reusing workspace
     BUMP_TYPE: minor
 
 cut-major:
   <<: *cut-base
   variables:
+    GIT_STRATEGY: clone # clone entire repo instead of reusing workspace
     BUMP_TYPE: major
 
 distribute:
