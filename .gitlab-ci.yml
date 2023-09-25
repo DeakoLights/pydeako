@@ -86,12 +86,16 @@ test:
   when: manual
   before_script:
     - eval $(ssh-agent -s)
-    - echo "$SSH_PRIVATE_KEY" | ssh-add -
+    - echo "$SSH_WRITE_KEY" | tr -d '\r' | ssh-add - > /dev/null
     - mkdir -p ~/.ssh
-    - echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts # https://docs.gitlab.com/ee/ci/ssh_keys/#verifying-the-ssh-host-keys
+    - chmod 700 ~/.ssh
+    - echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
     - chmod 644 ~/.ssh/known_hosts
-    - git config --global user.email "ocelot@deako.com"
-    - git config --global user.name "Babou"
+    - git config --global user.email "macaroni@deako.com"
+    - git config --global user.name "Macaroni the Penguin"
+    - git remote add releaseRemote git@gitlab.com:deako/software/macaroni.git || true
+    - git remote set-url releaseRemote git@gitlab.com:deako/software/macaroni.git || true
+
   script:
     - old_version_number=$(grep 'version =' pyproject.toml | sed -n 's/.*version = "\(.*\)"/\1/p')
     - bump2version $BUMP_TYPE
@@ -99,7 +103,7 @@ test:
     - git checkout -b release/$new_version_number
     - git add .
     - git commit -m "Bumping version $old_version_number to $new_version_number"
-    - git push origin release/$new_version_number
+    - git push releaseRemote release/$new_version_number
 
 cut-patch:
   <<: *cut-base
