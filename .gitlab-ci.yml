@@ -50,6 +50,7 @@ push_branch_container:
   except:
     refs:
       - main
+      - release
   variables:
     TAG: "${CI_COMMIT_REF_SLUG}"
 
@@ -62,6 +63,7 @@ push_branch_container:
   except:
     refs:
       - main
+      - release
   image: $CI_REGISTRY_IMAGE/$IMAGE:${CI_COMMIT_REF_SLUG}
 
 lint:
@@ -103,7 +105,10 @@ test:
     - git checkout -b release/$new_version_number
     - git add .
     - git commit -m "Bumping version $old_version_number to $new_version_number"
+    - git checkout main
+    - git merge release/$new_version_number
     - git push releaseRemote release/$new_version_number
+    - git push releaseRemote main
 
 cut-patch:
   <<: *cut-base
