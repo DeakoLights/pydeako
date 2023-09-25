@@ -90,8 +90,8 @@ test:
     - mkdir -p ~/.ssh
     - echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts # https://docs.gitlab.com/ee/ci/ssh_keys/#verifying-the-ssh-host-keys
     - chmod 644 ~/.ssh/known_hosts
-    - git config --global user.email "software@deako.com"
-    - git config --global user.name "Macroni"
+    - git config --global user.email "ocelot@deako.com"
+    - git config --global user.name "Babou"
   script:
     - old_version_number=$(grep 'version =' pyproject.toml | sed -n 's/.*version = "\(.*\)"/\1/p')
     - bump2version $BUMP_TYPE
