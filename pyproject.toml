@@ -6,7 +6,7 @@ authors = [
 ]
 description = "Connect and interact with deako devices over the network locally"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
     "zeroconf",
 ]
