@@ -55,6 +55,7 @@ class _Connection:
 
     async def send_data(self, data_to_send: str) -> None:
         """Send data to socket."""
+        _LOGGER.debug("[%s] Sending data: %s", self.address, data_to_send)
         try:
             await self.socket.send_bytes(str.encode(data_to_send))
         except Exception as exc:  # pylint: disable=broad-exception-caught
@@ -78,6 +79,9 @@ class _Connection:
         data come in multiple chunks and multiple messages.
         """
         raw_string = data.decode("utf-8")
+        _LOGGER.debug(
+            "[%s] Raw message received: %s", self.address, raw_string
+        )
         messages = raw_string.strip().split("\r\n")
         for message_str in messages:
             self.message_buffer = self.message_buffer + message_str
@@ -86,9 +90,7 @@ class _Connection:
                 self.on_data_callback(message_json)
                 self.message_buffer = ""
             except json.decoder.JSONDecodeError:
-                _LOGGER.error(
-                    "Got partial message: %s", self.message_buffer
-                )
+                _LOGGER.error("Got partial message: %s", self.message_buffer)
 
     def init_run(self) -> None:
         """Init the run sequence and store run task."""

@@ -22,6 +22,31 @@ def test_init():
 @patch("pydeako.deako._manager._Manager.create_connection_task")
 @patch("pydeako.deako._manager.asyncio")
 @pytest.mark.asyncio
+async def test_init_connection_already_started(
+    asyncio_mock, create_connection_mock, control_device_worker_mock
+):
+    """
+    Test _Manager.init_connection when the connection
+    sequence has already been initiated.
+    """
+    get_address = AsyncMock()
+
+    manager = _Manager(get_address, Mock())
+    manager.state.connecting = True
+
+    await manager.init_connection()
+
+    asyncio_mock.create_task.assert_not_called()
+
+    control_device_worker_mock.assert_not_called()
+
+    create_connection_mock.assert_not_called()
+
+
+@patch("pydeako.deako._manager._Manager.control_device_worker")
+@patch("pydeako.deako._manager._Manager.create_connection_task")
+@patch("pydeako.deako._manager.asyncio")
+@pytest.mark.asyncio
 async def test_init_connection_get_address_no_devices(
     asyncio_mock, create_connection_mock, control_device_worker_mock
 ):
@@ -111,6 +136,8 @@ async def test_init_connection(
 
     connection_mock.assert_called_once_with(address, manager.incoming_json)
 
+    assert not manager.state.connecting
+
 
 def test_close():
     """Test _Manager.close."""
@@ -128,6 +155,8 @@ def test_close():
     worker.cancel.assert_called_once()
     maintain_worker.cancel.assert_called_once()
     connection.close.assert_called_once()
+
+    assert manager.state.canceled
 
 
 @patch("pydeako.deako._manager.asyncio")
@@ -149,6 +178,27 @@ def test_create_connection_task(init_connection_mock, asyncio_mock):
 @patch("pydeako.deako._manager._Manager.create_connection_task")
 @patch("pydeako.deako._manager.asyncio", autospec=True)
 @pytest.mark.asyncio
+async def test_maintain_connection_worker_canceled(
+    asyncio_mock, create_connection_mock, close_mock
+):
+    """
+    Test _Manager.maintain_connection_worker
+    doesn't proceed when canceled.
+    """
+    manager = _Manager(AsyncMock(), Mock())
+    manager.state.canceled = True
+
+    await manager.maintain_connection_worker()
+
+    asyncio_mock.sleep.assert_called_once_with(10)
+    close_mock.assert_not_called()
+    create_connection_mock.assert_not_called()
+
+
+@patch("pydeako.deako._manager._Manager.close")
+@patch("pydeako.deako._manager._Manager.create_connection_task")
+@patch("pydeako.deako._manager.asyncio", autospec=True)
+@pytest.mark.asyncio
 async def test_maintain_connection_worker_no_pong(
     asyncio_mock, create_connection_mock, close_mock
 ):
@@ -157,7 +207,9 @@ async def test_maintain_connection_worker_no_pong(
 
     await manager.maintain_connection_worker()
 
-    asyncio_mock.sleep.assert_called_once_with(10)
+    assert len(asyncio_mock.sleep.mock_calls) == 2
+    assert asyncio_mock.sleep.mock_calls[0].args[0] == 10
+    assert asyncio_mock.sleep.mock_calls[1].args[0] == 10
     close_mock.assert_called_once()
     create_connection_mock.assert_called_once()
 
@@ -250,6 +302,18 @@ async def test_send_state_change(
     )
 
 
+@patch("pydeako.deako._manager._Manager.process_queue_item")
+@pytest.mark.asyncio
+async def test_control_device_worker_canceled(mock_process_queue_item):
+    """Test _Manager.control_device_worker doesn't process queue items."""
+    manager = _Manager(AsyncMock(), Mock())
+    manager.state.canceled = True
+
+    await manager.control_device_worker()
+
+    mock_process_queue_item.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_process_queue_item():
     """Test _Manager.process_queue_item."""
@@ -259,6 +323,8 @@ async def test_process_queue_item():
     connection_mock = AsyncMock()
 
     manager = _Manager(AsyncMock(), Mock())
+    # make sure this gets reset
+    manager.state.logged_send_error = True
 
     manager.message_queue = queue_mock
     manager.connection = connection_mock
@@ -271,6 +337,7 @@ async def test_process_queue_item():
     connection_mock.send_data.assert_called_once_with(request_str)
     queue_mock.task_done.assert_called_once()
     request.complete_callback.assert_called_once()
+    assert not manager.state.logged_send_error
 
 
 @pytest.mark.asyncio
