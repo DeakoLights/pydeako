@@ -50,7 +50,7 @@ push_branch_container:
   except:
     refs:
       - main
-      - release
+      - release/*
   variables:
     TAG: "${CI_COMMIT_REF_SLUG}"
 
@@ -63,7 +63,7 @@ push_branch_container:
   except:
     refs:
       - main
-      - release
+      - release/*
   image: $CI_REGISTRY_IMAGE/$IMAGE:${CI_COMMIT_REF_SLUG}
 
 lint:

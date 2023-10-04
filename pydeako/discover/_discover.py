@@ -14,7 +14,7 @@ DEAKO_TYPE = "_deako._tcp.local."
 TIMEOUT_S = 10
 POLLING_INTERVAL_S = 0.5
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__package__)
 
 
 class DevicesNotFoundException(Exception):

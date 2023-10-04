@@ -5,8 +5,8 @@ through pinging, and one to check for messages to send.
 """
 
 import asyncio
-import json
 import logging
+from dataclasses import dataclass
 from typing import Callable
 
 from ..discover import DevicesNotFoundException
@@ -28,6 +28,15 @@ WORKER_WAIT_S = 0.5
 PING_WORKER_WAIT_S = 10
 
 
+@dataclass
+class _ManagerState:
+    """State for _Manager, used by workers."""
+
+    connecting: bool = False
+    canceled: bool = False
+    logged_send_error = False
+
+
 # pylint: disable-next=too-many-instance-attributes
 class _Manager:
     """Manage the socket connection to Deako local integrations."""
@@ -38,6 +47,7 @@ class _Manager:
     message_queue: asyncio.Queue[_Request]
     tasks: set[asyncio.Task]
     client_name: str | None
+    state: _ManagerState
 
     def __init__(
         self,
@@ -52,9 +62,14 @@ class _Manager:
         self.message_queue = asyncio.Queue()
         self.tasks = set()
         self.client_name = client_name
+        self.state = _ManagerState()
 
     async def init_connection(self) -> None:
         """Initialize the connection process."""
+        if self.state.connecting:
+            _LOGGER.error("Already attempting to connect")
+            return
+        self.state.connecting = True
         self.worker = asyncio.create_task(self.control_device_worker())
         try:
             address = await self.get_address()
@@ -76,10 +91,12 @@ class _Manager:
             self.maintain_worker = asyncio.create_task(
                 self.maintain_connection_worker()
             )
+        self.state.connecting = False
 
     def close(self) -> None:
         """Close connection."""
         _LOGGER.debug("Closing connection and canceling workers")
+        self.state.canceled = True
         if self.worker is not None:
             self.worker.cancel()
             self.worker = None
@@ -106,7 +123,10 @@ class _Manager:
 
     async def maintain_connection_worker(self) -> None:
         """Monitor connection and restart if there's a failure."""
+        await asyncio.sleep(PING_WORKER_WAIT_S)
         while True:
+            if self.state.canceled:
+                break
             self.pong_received = False
             _LOGGER.debug("Pinging for responsiveness")
             await self.message_queue.put(
@@ -123,7 +143,6 @@ class _Manager:
 
     def incoming_json(self, incoming_json: dict) -> None:
         """Handle incoming json."""
-        _LOGGER.debug("Incoming json: %s", json.dumps(incoming_json))
         response_type = incoming_json.get("type")
         if response_type == ResponseType.PONG:
             self.pong_received = True
@@ -153,6 +172,8 @@ class _Manager:
     async def control_device_worker(self) -> None:
         """Forever running until canceled worker that checks queue."""
         while True:
+            if self.state.canceled:
+                break
             await self.process_queue_item()
             await asyncio.sleep(WORKER_WAIT_S)
 
@@ -160,11 +181,16 @@ class _Manager:
         """Dequeue message and send if there's a connection"""
         request = await self.message_queue.get()
         if self.connection is not None:
+            # if we have a connection, we can log this error again
+            # if things go south
+            self.state.logged_send_error = False
             await self.connection.send_data(request.get_body_str())
             self.message_queue.task_done()
             request.complete_callback()
         else:
-            _LOGGER.error("No connection to send data to")
+            if not self.state.logged_send_error:  # don't spam these logs
+                _LOGGER.error("No connection to send data to")
+                self.state.logged_send_error = True
             if request.get_type() == RequestType.PING:
                 # dump this request, no longer needed
                 self.message_queue.task_done()
