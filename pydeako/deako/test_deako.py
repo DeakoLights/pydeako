@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from mock import ANY, Mock, patch
 
-from ._deako import Deako, FindDevicesTimeout, NoExpectedDevices
+from ._deako import Deako, FindDevicesTimeout, DeviceListTimeout
 
 
 @patch("pydeako.deako._deako._Manager")
@@ -258,7 +258,7 @@ async def test_find_devices_no_expected_devices(asyncio_mock, manager_mock):
     """Test Deako.find_devices no expected devices raises."""
     deako = Deako(Mock())
 
-    with pytest.raises(NoExpectedDevices):
+    with pytest.raises(DeviceListTimeout):
         await deako.find_devices()
 
     manager_mock.return_value.send_get_device_list.assert_called_once()

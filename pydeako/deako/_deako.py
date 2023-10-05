@@ -10,8 +10,8 @@ from ._manager import _Manager
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 
-class NoExpectedDevices(Exception):
-    """No devices expected to be returned."""
+class DeviceListTimeout(Exception):
+    """Device list request timed out."""
 
 
 class FindDevicesTimeout(Exception):
@@ -122,8 +122,9 @@ class Deako:
             await asyncio.sleep(DEVICE_LIST_POLLING_INTERVAL_S)
             remaining -= DEVICE_LIST_POLLING_INTERVAL_S
 
+        # if we get a response, expected_devices will be at least 1
         if self.expected_devices == 0:
-            raise NoExpectedDevices()
+            raise DeviceListTimeout()
 
         remaining = self.expected_devices * DEVICE_FOUND_TIME_FACTOR_S
         while len(self.devices) != self.expected_devices and remaining > 0:
