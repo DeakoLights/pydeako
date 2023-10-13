@@ -35,9 +35,9 @@ class DeakoDiscoverer(ServiceBrowser):
     address_pool: _AddressPool
     zeroconf: Zeroconf
 
-    def __init__(self, zeroconf: Zeroconf = Zeroconf()) -> None:
+    def __init__(self, zeroconf: Zeroconf | None = None) -> None:
         """Initialize Deako mdns discovery."""
-        self.zeroconf = zeroconf
+        self.zeroconf = zeroconf or Zeroconf()
         self.address_pool = _AddressPool()
         # Note that this begins discovering on init
         super().__init__(

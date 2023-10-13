@@ -36,6 +36,33 @@ def test_deako_discoverer_init(
     )
 
 
+@patch("pydeako.discover._discover.Zeroconf", spec=Zeroconf)
+@patch("pydeako.discover._discover.ServiceBrowser.__init__")
+@patch("pydeako.discover._discover.DeakoListener", spec=DeakoListener)
+@patch("pydeako.discover._discover._AddressPool", spec=_AddressPool)
+def test_deako_discoverer_init_no_zc(
+    mock_address_pool, mock_deako_listener, mock_service_browser_init, mock_zc
+):
+    """Test init of Discoverer.__init__ with no zc passed in"""
+
+    deako_discoverer = DeakoDiscoverer()
+
+    assert deako_discoverer is not None
+
+    mock_zc.assert_called_once()
+    mock_address_pool.assert_called_once_with()
+    mock_deako_listener.assert_called_once_with(
+        mock_address_pool.return_value.add_address,
+        mock_address_pool.return_value.remove_address,
+    )
+
+    mock_service_browser_init.assert_called_once_with(
+        mock_zc.return_value,
+        "_deako._tcp.local.",
+        mock_deako_listener.return_value,
+    )
+
+
 @patch("pydeako.discover._discover.TIMEOUT_S", 1)
 @patch("pydeako.discover._discover.ServiceBrowser.__init__")
 @patch("pydeako.discover._discover.DeakoListener", spec=DeakoListener)
