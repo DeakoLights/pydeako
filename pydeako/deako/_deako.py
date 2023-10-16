@@ -108,7 +108,10 @@ class Deako:
         """Get the devices that have been recorded."""
         return self.devices
 
-    async def find_devices(self, timeout=DEFAULT_DEVICE_LIST_TIMEOUT_S):
+    async def find_devices(
+            self,
+            timeout=DEFAULT_DEVICE_LIST_TIMEOUT_S,
+    ) -> None:
         """Request the device list."""
         _LOGGER.info("Finding devices")
         await self.connection_manager.send_get_device_list()
@@ -144,7 +147,7 @@ class Deako:
 
     async def control_device(
         self, uuid: str, power: bool, dim: int | None = None
-    ):
+    ) -> None:
         """Add control request to queue."""
 
         def completed_callback():
