@@ -24,6 +24,8 @@ DEFAULT_DEVICE_LIST_TIMEOUT_S = 10
 DEVICE_LIST_POLLING_INTERVAL_S = 1
 DEVICE_FOUND_POLLING_INTERVAL_S = 1
 
+CAPABILITY_DIMMABLE = "dim"
+
 
 class Deako:
     """Deako specific socket api."""
@@ -43,14 +45,17 @@ class Deako:
         self.expected_devices = 0
 
     def update_state(
-        self, uuid: str, power: bool, dim: int | None = None
+        self, uuid: str, power: bool, dim: int | None = None,
     ) -> None:
         """Update an in memory device's state."""
         if uuid not in self.devices:
             return
 
         self.devices[uuid]["state"]["power"] = power
-        self.devices[uuid]["state"]["dim"] = dim
+        # dimmables don't always send dim
+        self.devices[uuid]["state"]["dim"] = (
+            dim or self.devices[uuid]["state"]["dim"]
+        )
 
         if "callback" in self.devices[uuid]:
             self.devices[uuid]["callback"]()
@@ -69,9 +74,15 @@ class Deako:
             elif in_data["type"] == ResponseType.DEVICE_FOUND:
                 subdata = in_data["data"]
                 state = subdata["state"]
+                if subdata.get("capabilities") is not None:
+                    dimmable = CAPABILITY_DIMMABLE in subdata["capabilities"]
+                else:
+                    # support older local api versions
+                    dimmable = state.get("dim") is not None
                 self.record_device(
                     subdata["name"],
                     subdata["uuid"],
+                    dimmable,
                     state["power"],
                     state.get("dim"),
                 )
@@ -79,13 +90,15 @@ class Deako:
                 subdata = in_data["data"]
                 state = subdata["state"]
                 self.update_state(
-                    subdata["target"], state["power"], state.get("dim")
+                    subdata["target"], state["power"], state.get("dim"),
                 )
         except Exception as exc:  # pylint: disable=broad-exception-caught
             _LOGGER.error("Failed to parse %s: %s", in_data, exc)
 
+    # pylint: disable-next=too-many-arguments
     def record_device(
-        self, name: str, uuid: str, power: bool, dim: int | None = None
+        self, name: str, uuid: str, dimmable: bool,
+        power: bool, dim: int | None = None,
     ) -> None:
         """Store a device in local memory."""
         if uuid not in self.devices:
@@ -93,6 +106,7 @@ class Deako:
 
         self.devices[uuid]["name"] = name
         self.devices[uuid]["uuid"] = uuid
+        self.devices[uuid]["dimmable"] = dimmable
         self.devices[uuid]["state"]["power"] = power
         self.devices[uuid]["state"]["dim"] = dim
 
@@ -109,18 +123,17 @@ class Deako:
         return self.devices
 
     async def find_devices(
-            self,
-            timeout=DEFAULT_DEVICE_LIST_TIMEOUT_S,
+        self,
+        timeout=DEFAULT_DEVICE_LIST_TIMEOUT_S,
     ) -> None:
         """Request the device list."""
         _LOGGER.info("Finding devices")
         await self.connection_manager.send_get_device_list()
         remaining = timeout
-        while (
-            self.expected_devices == 0 and remaining > 0
-        ):  # wait for device list
+        # wait for device list
+        while self.expected_devices == 0 and remaining > 0:
             _LOGGER.debug(
-                "waiting for device list... time remaining: %is", remaining
+                "waiting for device list... time remaining: %is", remaining,
             )
             await asyncio.sleep(DEVICE_LIST_POLLING_INTERVAL_S)
             remaining -= DEVICE_LIST_POLLING_INTERVAL_S
@@ -174,3 +187,12 @@ class Deako:
 
         # state should exist if we have data on this device
         return device_data["state"]
+
+    def is_dimmable(self, uuid: str) -> bool | None:
+        """Get whether a device is dimmable by uuid."""
+        device_data = self.devices.get(uuid)
+        if device_data is None:
+            return None
+
+        # dimmable should exist if we have data on this device
+        return device_data["dimmable"]

@@ -55,6 +55,31 @@ def test_update_state_no_callback():
     }
 
 
+def test_update_state_no_callback_no_dim():
+    """
+    Test Deako.update_state with no callback,
+    no dim for a device that has dim.
+    """
+    device_id = str(uuid4())
+
+    deako = Deako(Mock())
+    deako.devices[device_id] = {
+        "state": {
+            "power": False,
+            "dim": 69,
+        },
+    }
+
+    deako.update_state(device_id, True)
+
+    assert deako.devices[device_id] == {
+        "state": {
+            "power": True,
+            "dim": 69,
+        },
+    }
+
+
 def test_update_state_with_callback():
     """Test Deako.update_state with callback."""
     device_id = str(uuid4())
@@ -123,10 +148,49 @@ def test_incoming_json_device_list():
     assert deako.expected_devices == 42
 
 
+@pytest.mark.parametrize(
+    "capabilities_param",
+    [("power", False), ("dim+power", True)],
+)
 @pytest.mark.parametrize("dim", [None, 69])
 @patch("pydeako.deako._deako.Deako.record_device")
-def test_incoming_json_device_found(record_device_mock, dim):
-    """Test deako.incoming_json device."""
+def test_incoming_json_device_found(
+    record_device_mock, dim, capabilities_param,
+):
+    """Test deako.incoming_json device with capabilities."""
+    [capabilities, dimmable] = capabilities_param
+    device_id = str(uuid4())
+    device_name = str(uuid4())
+    deako = Deako(Mock())
+
+    incoming = {
+        "type": "DEVICE_FOUND",
+        "data": {
+            "name": device_name,
+            "capabilities": capabilities,
+            "uuid": device_id,
+            "state": {
+                "power": True,
+            },
+        },
+    }
+
+    if dim is not None:
+        incoming["data"]["state"]["dim"] = dim
+
+    deako.incoming_json(incoming)
+
+    record_device_mock.assert_called_once_with(
+        device_name, device_id, dimmable, True, dim
+    )
+
+
+@pytest.mark.parametrize("dim", [None, 69])
+@patch("pydeako.deako._deako.Deako.record_device")
+def test_incoming_json_device_found_no_capabilities(
+    record_device_mock, dim,
+):
+    """Test deako.incoming_json device, no capabilities."""
     device_id = str(uuid4())
     device_name = str(uuid4())
     deako = Deako(Mock())
@@ -148,7 +212,7 @@ def test_incoming_json_device_found(record_device_mock, dim):
     deako.incoming_json(incoming)
 
     record_device_mock.assert_called_once_with(
-        device_name, device_id, True, dim
+        device_name, device_id, dim is not None, True, dim
     )
 
 
@@ -200,18 +264,20 @@ def test_incoming_json_exception_ignored(update_state_mock):
     update_state_mock.assert_called_once_with(device_id, True, None)
 
 
+@pytest.mark.parametrize("dimmable", [True, False])
 @pytest.mark.parametrize("dim", [None, 69])
-def test_incoming_record_device(dim):
+def test_incoming_record_device(dim, dimmable):
     """Test Deako.incoming_json record device."""
     device_id = str(uuid4())
     device_name = str(uuid4())
     deako = Deako(Mock())
 
-    deako.record_device(device_name, device_id, False, dim)
+    deako.record_device(device_name, device_id, dimmable, False, dim)
 
     assert deako.devices[device_id] == {
         "name": device_name,
         "uuid": device_id,
+        "dimmable": dimmable,
         "state": {
             "power": False,
             "dim": dim,
@@ -354,3 +420,24 @@ async def test_get_state(device_exists):
         assert state == device_state
     else:
         assert state is None
+
+
+@pytest.mark.parametrize("dimmable", [True, False])
+@pytest.mark.parametrize("device_exists", [True, False])
+@pytest.mark.asyncio
+async def test_get_dimmable(device_exists, dimmable):
+    """Test Deako.get_state"""
+    device_id = str(uuid4())
+    deako = Deako(Mock())
+
+    if device_exists:
+        deako.devices[device_id] = {
+            "dimmable": dimmable,
+        }
+
+    is_dimmable = deako.is_dimmable(device_id)
+
+    if device_exists:
+        assert is_dimmable == dimmable
+    else:
+        assert is_dimmable is None
