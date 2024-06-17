@@ -14,7 +14,6 @@ from ..models import (
     device_list_request,
     device_ping_request,
     state_change_request,
-    RequestType,
     ResponseType,
 )
 from .utils import _Connection
@@ -44,7 +43,6 @@ class _Manager:
     maintain_worker: asyncio.Task | None = None
     worker: asyncio.Task | None = None
     connection: _Connection | None = None
-    message_queue: asyncio.Queue[_Request]
     tasks: set[asyncio.Task]
     client_name: str | None
     state: _ManagerState
@@ -59,7 +57,6 @@ class _Manager:
         self.get_address = get_address
         self.incoming_json_callback = incoming_json_callback
         self.pong_received = False
-        self.message_queue = asyncio.Queue()
         self.tasks = set()
         self.client_name = client_name
         self.state = _ManagerState()
@@ -70,11 +67,12 @@ class _Manager:
             _LOGGER.error("Already attempting to connect")
             return
         self.state.connecting = True
-        self.worker = asyncio.create_task(self.control_device_worker())
         try:
             address = await self.get_address()
         except DevicesNotFoundException:
+            _LOGGER.warning("No devices to connect to")
             self.create_connection_task()
+            self.state.connecting = False
             return
         connection = _Connection(address, self.incoming_json)
         timeout = 0
@@ -83,11 +81,14 @@ class _Manager:
             timeout += CONNECTED_POLLING_INTERVAL_S
         if timeout == CONNECTION_TIMEOUT_S:
             _LOGGER.error("Timeout attempting to connect. Trying again")
+            self.state.connecting = False
+            connection.close()
             self.create_connection_task()
             return
         self.connection = connection
         # init connection watching
         if self.maintain_worker is None:
+            self.state.canceled = False
             self.maintain_worker = asyncio.create_task(
                 self.maintain_connection_worker()
             )
@@ -129,7 +130,7 @@ class _Manager:
                 break
             self.pong_received = False
             _LOGGER.debug("Pinging for responsiveness")
-            await self.message_queue.put(
+            await self.send_request(
                 _Request(device_ping_request(source=self.client_name)),
             )
             await asyncio.sleep(PING_WORKER_WAIT_S)
@@ -150,8 +151,8 @@ class _Manager:
             self.incoming_json_callback(incoming_json)
 
     async def send_get_device_list(self) -> None:
-        """Queue the device list request."""
-        await self.message_queue.put(
+        """Send the device list request."""
+        await self.send_request(
             _Request(device_list_request(source=self.client_name)),
         )
 
@@ -162,37 +163,19 @@ class _Manager:
         dim=None,
         completed_callback: Callable | None = None,
     ) -> None:
-        """Queue a state change request."""
-        req = _Request(
-            state_change_request(uuid, power, dim, source=self.client_name),
-            completed_callback=completed_callback,
+        """Send a state change request."""
+        await self.send_request(
+            _Request(
+                state_change_request(
+                    uuid, power, dim, source=self.client_name,
+                ),
+                completed_callback=completed_callback,
+            )
         )
-        await self.message_queue.put(req)
 
-    async def control_device_worker(self) -> None:
-        """Forever running until canceled worker that checks queue."""
-        while True:
-            if self.state.canceled:
-                break
-            await self.process_queue_item()
-            await asyncio.sleep(WORKER_WAIT_S)
-
-    async def process_queue_item(self):
-        """Dequeue message and send if there's a connection"""
-        request = await self.message_queue.get()
+    async def send_request(self, req: _Request):
+        """Send a request."""
         if self.connection is not None:
-            # if we have a connection, we can log this error again
-            # if things go south
-            self.state.logged_send_error = False
-            await self.connection.send_data(request.get_body_str())
-            self.message_queue.task_done()
-            request.complete_callback()
+            await self.connection.send_data(req.get_body_str())
         else:
-            if not self.state.logged_send_error:  # don't spam these logs
-                _LOGGER.error("No connection to send data to")
-                self.state.logged_send_error = True
-            if request.get_type() == RequestType.PING:
-                # dump this request, no longer needed
-                self.message_queue.task_done()
-            else:
-                await self.message_queue.put(request)
+            _LOGGER.warning("No connection to send data to")
