@@ -6,9 +6,7 @@ import pytest
 from mock import AsyncMock, Mock, patch
 
 from ..discover import DevicesNotFoundException
-from ..models import RequestType
 from ._manager import _Manager, CONNECTION_TIMEOUT_S
-from ._request import _Request
 
 
 def test_init():
@@ -18,12 +16,12 @@ def test_init():
     assert manager is not None
 
 
-@patch("pydeako.deako._manager._Manager.control_device_worker")
 @patch("pydeako.deako._manager._Manager.create_connection_task")
 @patch("pydeako.deako._manager.asyncio")
 @pytest.mark.asyncio
 async def test_init_connection_already_started(
-    asyncio_mock, create_connection_mock, control_device_worker_mock
+    asyncio_mock,
+    create_connection_mock,
 ):
     """
     Test _Manager.init_connection when the connection
@@ -38,17 +36,13 @@ async def test_init_connection_already_started(
 
     asyncio_mock.create_task.assert_not_called()
 
-    control_device_worker_mock.assert_not_called()
-
     create_connection_mock.assert_not_called()
 
 
-@patch("pydeako.deako._manager._Manager.control_device_worker")
 @patch("pydeako.deako._manager._Manager.create_connection_task")
-@patch("pydeako.deako._manager.asyncio")
 @pytest.mark.asyncio
 async def test_init_connection_get_address_no_devices(
-    asyncio_mock, create_connection_mock, control_device_worker_mock
+    create_connection_mock,
 ):
     """
     Test _Manager.init_connection with no devices found
@@ -63,23 +57,18 @@ async def test_init_connection_get_address_no_devices(
 
     await manager.init_connection()
 
-    # arg is control_device_worker_mock coroutine
-    asyncio_mock.create_task.assert_called_once()
-
-    control_device_worker_mock.assert_called_once()
-
     create_connection_mock.assert_called_once()
+
+    assert manager.state.connecting is False
 
 
 @patch("pydeako.deako._manager._Manager.create_connection_task")
-@patch("pydeako.deako._manager._Manager.control_device_worker")
 @patch("pydeako.deako._manager._Connection")
 @patch("pydeako.deako._manager.asyncio", autospec=True)
 @pytest.mark.asyncio
 async def test_init_connection_timeout_connecting(
     asyncio_mock,
     connection_mock,
-    control_device_worker_mock,
     create_connection_mock,
 ):
     """Test _Manager.init_connection with timeout."""
@@ -94,10 +83,6 @@ async def test_init_connection_timeout_connecting(
 
     await manager.init_connection()
 
-    # arg is control_device_worker_mock coroutine
-    asyncio_mock.create_task.assert_called_once()
-    control_device_worker_mock.assert_called_once()
-
     connection_mock.assert_called_once_with(address, manager.incoming_json)
 
     assert asyncio_mock.sleep.call_count == CONNECTION_TIMEOUT_S
@@ -106,17 +91,15 @@ async def test_init_connection_timeout_connecting(
 
 
 @patch("pydeako.deako._manager._Manager.maintain_connection_worker")
-@patch("pydeako.deako._manager._Manager.control_device_worker")
 @patch("pydeako.deako._manager._Connection")
 @patch("pydeako.deako._manager.asyncio", autospec=True)
 @pytest.mark.asyncio
 async def test_init_connection(
     asyncio_mock,
     connection_mock,
-    control_device_worker_mock,
     maintain_connection_worker_mock,
 ):
-    """Test _Manager.init_connection"""
+    """Test _Manager.init_connection, success"""
     address = Mock()
     get_address = AsyncMock()
 
@@ -128,10 +111,7 @@ async def test_init_connection(
 
     await manager.init_connection()
 
-    assert (
-        asyncio_mock.create_task.call_count == 2
-    )  # once for control device worker, once for maintain connection worker
-    control_device_worker_mock.assert_called_once()
+    assert asyncio_mock.create_task.call_count == 1
     maintain_connection_worker_mock.assert_called_once()
 
     connection_mock.assert_called_once_with(address, manager.incoming_json)
@@ -244,11 +224,8 @@ def test_incoming_json():
 
 @patch("pydeako.deako._manager._Request")
 @patch("pydeako.deako._manager.device_list_request")
-@patch("pydeako.deako._manager.asyncio", autospec=True)
 @pytest.mark.asyncio
-async def test_send_get_device_list(
-    asyncio_mock, device_list_request_mock, request_mock
-):
+async def test_send_get_device_list(device_list_request_mock, request_mock):
     """Test _Manager.send_get_device_list."""
     client_name = Mock()
     request_mock_ret = Mock()
@@ -259,21 +236,19 @@ async def test_send_get_device_list(
 
     await manager.send_get_device_list()
 
-    queue_mock = asyncio_mock.Queue.return_value
-
     device_list_request_mock.assert_called_once_with(source=client_name)
 
     request_mock.assert_called_once_with(device_list_request_mock.return_value)
-    queue_mock.put.assert_called_once_with(request_mock_ret)
 
 
 @pytest.mark.parametrize("completed_callback", [None, "some_callback"])
 @patch("pydeako.deako._manager._Request")
 @patch("pydeako.deako._manager.state_change_request")
-@patch("pydeako.deako._manager.asyncio", autospec=True)
+@patch("pydeako.deako._manager._Manager.send_request")
 @pytest.mark.asyncio
 async def test_send_state_change(
-    asyncio_mock, state_change_request_mock, request_mock, completed_callback
+    send_request_mock, state_change_request_mock, request_mock,
+    completed_callback,
 ):
     """Test _Manager.send_state_change."""
     client_name = Mock()
@@ -290,9 +265,6 @@ async def test_send_state_change(
         uuid, power, dim, completed_callback=completed_callback
     )
 
-    queue_mock = asyncio_mock.Queue.return_value
-
-    queue_mock.put.assert_called_once_with(request_mock_ret)
     request_mock.assert_called_once_with(
         state_change_request_mock.return_value,
         completed_callback=completed_callback,
@@ -300,79 +272,42 @@ async def test_send_state_change(
     state_change_request_mock.assert_called_once_with(
         uuid, power, dim, source=client_name
     )
+    send_request_mock.assert_called_once_with(request_mock_ret)
 
 
-@patch("pydeako.deako._manager._Manager.process_queue_item")
+@patch("pydeako.deako._manager._Request")
 @pytest.mark.asyncio
-async def test_control_device_worker_canceled(mock_process_queue_item):
-    """Test _Manager.control_device_worker doesn't process queue items."""
-    manager = _Manager(AsyncMock(), Mock())
-    manager.state.canceled = True
-
-    await manager.control_device_worker()
-
-    mock_process_queue_item.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_process_queue_item():
-    """Test _Manager.process_queue_item."""
-    request = Mock()
-    request_str = Mock()
-    queue_mock = AsyncMock()
+async def test_send_request(
+    request_mock,
+):
+    """Test _Manager.send_request with connection"""
+    client_name = Mock()
     connection_mock = AsyncMock()
 
-    manager = _Manager(AsyncMock(), Mock())
-    # make sure this gets reset
-    manager.state.logged_send_error = True
+    request_mock.get_body_str.return_value = "some message"
 
-    manager.message_queue = queue_mock
+    manager = _Manager(AsyncMock(), Mock(), client_name=client_name)
+
     manager.connection = connection_mock
-    request.get_body_str.return_value = request_str
-    queue_mock.get.return_value = request
 
-    await manager.process_queue_item()
+    await manager.send_request(request_mock)
 
-    queue_mock.get.assert_called_once()
-    connection_mock.send_data.assert_called_once_with(request_str)
-    queue_mock.task_done.assert_called_once()
-    request.complete_callback.assert_called_once()
-    assert not manager.state.logged_send_error
+    connection_mock.send_data.assert_called_once_with("some message")
 
 
+@patch("pydeako.deako._manager._Request")
 @pytest.mark.asyncio
-async def test_process_queue_item_no_connection():
-    """Test _Manager.process_queue_item with no active connection."""
-    request = Mock()
-    queue_mock = AsyncMock()
+async def test_send_request_no_connection(
+    request_mock,
+):
+    """Test _Manager.send_request without connection"""
+    client_name = Mock()
+    connection_mock = AsyncMock()
 
-    manager = _Manager(AsyncMock(), Mock())
+    request_mock.get_body_str.return_value = "some message"
 
-    manager.message_queue = queue_mock
-    queue_mock.get.return_value = request
+    manager = _Manager(AsyncMock(), Mock(), client_name=client_name)
 
-    await manager.process_queue_item()
+    await manager.send_request(request_mock)
 
-    queue_mock.get.assert_called_once()
-    queue_mock.put.assert_called_once_with(request)
-    queue_mock.task_done.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_process_queue_item_no_connection_ping_dumped():
-    """
-    Test _Manager.process_queue_item with no active connection.
-    Dumps the ping request.
-    """
-    request = _Request({"type": RequestType.PING})
-    queue_mock = AsyncMock()
-
-    manager = _Manager(AsyncMock(), Mock())
-
-    manager.message_queue = queue_mock
-    queue_mock.get.return_value = request
-
-    await manager.process_queue_item()
-
-    queue_mock.get.assert_called_once()
-    queue_mock.task_done.assert_called_once()
+    connection_mock.send_data.assert_not_called()
