@@ -75,10 +75,10 @@ async def test_deako_discoverer_get_address_success(
     # use instance as the mock as this is what will be called
     mock_address_pool = mock_address_pool.return_value
     zc_mock = Mock(Zeroconf)
-    mock_address = str(uuid4())
+    mock_address, mock_name = str(uuid4()), str(uuid4())
 
     mock_address_pool.available_addresses.return_value = 1
-    mock_address_pool.get_address.return_value = mock_address
+    mock_address_pool.get_address.return_value = mock_address, mock_name
 
     deako_discoverer = DeakoDiscoverer(zc_mock)
 

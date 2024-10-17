@@ -49,7 +49,7 @@ class DeakoDiscoverer(ServiceBrowser):
             ),
         )
 
-    async def get_address(self) -> str:
+    async def get_address(self) -> tuple[str, str]:
         """
         Get an address from the pool of available addresses.
         Times out after TIMEOUT_S.
@@ -63,8 +63,8 @@ class DeakoDiscoverer(ServiceBrowser):
             await sleep(POLLING_INTERVAL_S)
         if self.address_pool.available_addresses() == 0:
             raise DevicesNotFoundException()
-        address = self.address_pool.get_address()
-        _LOGGER.debug("Got address %s", address)
+        address, name = self.address_pool.get_address()
+        _LOGGER.debug("Got address %s, with device name %s", address, name)
         return address
 
     def stop(self) -> None:
