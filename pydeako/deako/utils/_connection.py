@@ -90,7 +90,7 @@ class _Connection:
                 self.on_data_callback(message_json)
                 self.message_buffer = ""
             except json.decoder.JSONDecodeError:
-                _LOGGER.error("Got partial message: %s", self.message_buffer)
+                _LOGGER.debug("Got partial message: %s", self.message_buffer)
 
     def init_run(self) -> None:
         """Init the run sequence and store run task."""
