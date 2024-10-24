@@ -3,6 +3,7 @@ Address pool that is used for DeakoDiscoverer.
 """
 from collections import OrderedDict
 
+
 class EmptyAddressPool(Exception):
     """Empty address pool"""
 
@@ -11,7 +12,7 @@ class _AddressPool:
     """Address pool of advertised addresses."""
 
     addresses: OrderedDict[str, str]
-    
+
     def __init__(self) -> None:
         self.addresses = OrderedDict()
 
