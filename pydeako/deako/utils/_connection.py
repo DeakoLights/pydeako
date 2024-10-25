@@ -33,7 +33,10 @@ class _Connection:
     Continuously reads socket for messages async.
     """
 
+    # pylint: disable=too-many-instance-attributes
+
     address: str
+    name: str
     message_buffer: str
     loop: asyncio.AbstractEventLoop
     state: ConnectionState
@@ -41,10 +44,11 @@ class _Connection:
     tasks: set[asyncio.Task]
 
     def __init__(
-        self, address: str, on_data_callback: Callable[[dict], None]
+        self, address: str, name: str, on_data_callback: Callable[[dict], None]
     ) -> None:
         """Setup and start a socket connection."""
         self.address = address
+        self.name = name
         self.loop = asyncio.get_running_loop()
         self.state = ConnectionState.NOT_STARTED
         self.on_data_callback = on_data_callback
@@ -80,7 +84,9 @@ class _Connection:
         """
         raw_string = data.decode("utf-8")
         _LOGGER.debug(
-            "[%s] Raw message received: %s", self.address, raw_string
+            "[%s] Raw message received: %s",
+            self.format_name(),
+            raw_string,
         )
         messages = raw_string.strip().split("\r\n")
         for message_str in messages:
@@ -124,14 +130,14 @@ class _Connection:
                     await self.socket.connect_socket()
                     self.state = ConnectionState.CONNECTED
                     _LOGGER.info(
-                        "Connected to Deako local integrations at %s",
-                        self.address,
+                        "Connected to Deako local integrations with %s",
+                        self.format_name(),
                     )
                 # pylint: disable-next=broad-exception-caught
                 except Exception as exc:
                     _LOGGER.error(
-                        "Failed to connect to %s because %s",
-                        self.address,
+                        "Failed to connect %s because %s",
+                        self.format_name(),
                         exc,
                     )
                     self.state = ConnectionState.ERROR
@@ -141,8 +147,8 @@ class _Connection:
                 # pylint: disable-next=broad-exception-caught
                 except Exception as exc:
                     _LOGGER.error(
-                        "Failed to read socket at %s because %s",
-                        self.address,
+                        "Failed to read socket %s because %s",
+                        self.format_name(),
                         exc,
                     )
                     self.state = ConnectionState.ERROR
@@ -153,8 +159,8 @@ class _Connection:
                 # pylint: disable-next=broad-exception-caught
                 except Exception as exc:
                     _LOGGER.error(
-                        "Failed to close socket at %s because %s",
-                        self.address,
+                        "Failed to close socket %s because %s",
+                        self.format_name(),
                         exc,
                     )
                     self.state = ConnectionState.CLOSED
@@ -164,3 +170,7 @@ class _Connection:
             else:
                 _LOGGER.error("Unknown state: %s", self.state)
                 raise UnknownStateException(f"Unknown state: {self.state}")
+
+    def format_name(self) -> str:
+        """Format name."""
+        return f"{self.name}@{self.address}"

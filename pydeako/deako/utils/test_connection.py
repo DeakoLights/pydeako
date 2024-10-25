@@ -17,11 +17,11 @@ from ._socket import _SocketConnection
 @patch("pydeako.deako.utils._connection._Connection.init_run")
 def test_init(init_run_mock, socket_connection_mock, asyncio_mock):
     """Test _Connection.__init__"""
-    address = Mock()
+    address, name = Mock(), Mock()
     loop_mock = AsyncMock()
     asyncio_mock.get_running_loop.return_value = loop_mock
 
-    conn = _Connection(address, Mock())
+    conn = _Connection(address, name, Mock())
 
     socket_connection_mock.assert_called_once_with(address, loop_mock)
 
@@ -46,11 +46,11 @@ async def test_send_data(
     """Test _Connection.send_data."""
     data = str(uuid4())
     data_bytes = str.encode(data)
-    address = Mock()
+    address, name = Mock(), Mock()
     loop_mock = Mock()
     asyncio_mock.get_running_loop.return_value = loop_mock
 
-    conn = _Connection(address, Mock())
+    conn = _Connection(address, name, Mock())
 
     socket_connection_mock.assert_called_once_with(address, loop_mock)
     socket_connection_mock_instance = socket_connection_mock.return_value
@@ -82,11 +82,11 @@ async def test_read_socket(
 ):
     """Test _Connection.read_socket."""
     read_bytes = str.encode(str(uuid4()))
-    address = Mock()
+    address, name = Mock(), Mock()
     loop_mock = Mock()
     asyncio_mock.get_running_loop.return_value = loop_mock
 
-    conn = _Connection(address, Mock())
+    conn = _Connection(address, name, Mock())
 
     socket_connection_mock.assert_called_once_with(address, loop_mock)
     socket_connection_mock_instance = socket_connection_mock.return_value
@@ -115,12 +115,12 @@ def test_parse_data_one_item(socket_connection_mock, asyncio_mock):
     """Test _Connection.parse_data, one message."""
     json_message = {"key": "value"}
     one_item = str.encode(json.dumps(json_message))
-    address = Mock()
+    address, name = Mock(), Mock()
     loop_mock = Mock()
     on_data_callback = Mock()
     asyncio_mock.get_running_loop.return_value = loop_mock
 
-    conn = _Connection(address, on_data_callback)
+    conn = _Connection(address, name, on_data_callback)
 
     socket_connection_mock.assert_called_once_with(address, loop_mock)
 
@@ -143,12 +143,12 @@ def test_parse_data_multiple_item(socket_connection_mock, asyncio_mock):
             [json.dumps(item) for item in [json_message, json_message2]]
         )
     )
-    address = Mock()
+    address, name = Mock(), Mock()
     loop_mock = Mock()
     on_data_callback = Mock()
     asyncio_mock.get_running_loop.return_value = loop_mock
 
-    conn = _Connection(address, on_data_callback)
+    conn = _Connection(address, name, on_data_callback)
 
     socket_connection_mock.assert_called_once_with(address, loop_mock)
 
@@ -179,12 +179,12 @@ def test_parse_data_partial(socket_connection_mock, asyncio_mock):
             ]
         )
     )
-    address = Mock()
+    address, name = Mock(), Mock()
     loop_mock = Mock()
     on_data_callback = Mock()
     asyncio_mock.get_running_loop.return_value = loop_mock
 
-    conn = _Connection(address, on_data_callback)
+    conn = _Connection(address, name, on_data_callback)
 
     socket_connection_mock.assert_called_once_with(address, loop_mock)
 
@@ -205,14 +205,14 @@ def test_parse_data_partial(socket_connection_mock, asyncio_mock):
 @patch("pydeako.deako.utils._connection._Connection.run")
 def test_init_run(run_mock, socket_connection_mock, asyncio_mock):
     """Test _Connection.__init__"""
-    address = Mock()
+    address, name = Mock(), Mock()
     loop_mock = Mock()
     task_mock = Mock()
     asyncio_mock.get_running_loop.return_value = loop_mock
 
     loop_mock.create_task.return_value = task_mock
 
-    conn = _Connection(address, Mock())
+    conn = _Connection(address, name, Mock())
 
     socket_connection_mock.assert_called_once_with(address, loop_mock)
 
@@ -227,11 +227,11 @@ def test_init_run(run_mock, socket_connection_mock, asyncio_mock):
 )
 def test_close(socket_connection_mock, asyncio_mock):
     """Test _Connection.close."""
-    address = Mock()
+    address, name = Mock(), Mock()
     loop_mock = Mock()
     asyncio_mock.get_running_loop.return_value = loop_mock
 
-    conn = _Connection(address, Mock())
+    conn = _Connection(address, name, Mock())
 
     socket_connection_mock.assert_called_once_with(address, loop_mock)
 
@@ -262,11 +262,11 @@ def test_close(socket_connection_mock, asyncio_mock):
 )
 def test_is_connected(socket_connection_mock, asyncio_mock, state, expected):
     """Test _Connection.is_connected."""
-    address = Mock()
+    address, name = Mock(), Mock()
     loop_mock = Mock()
     asyncio_mock.get_running_loop.return_value = loop_mock
 
-    conn = _Connection(address, Mock())
+    conn = _Connection(address, name, Mock())
 
     socket_connection_mock.assert_called_once_with(address, loop_mock)
 
@@ -284,11 +284,11 @@ async def test_state_machine_connect_failure(
     socket_connection_mock, asyncio_mock
 ):
     """Test _Connection.run, connect exception calls close."""
-    address = Mock()
+    address, name = Mock(), Mock()
     loop_mock = Mock()
     asyncio_mock.get_running_loop.return_value = loop_mock
 
-    conn = _Connection(address, Mock())
+    conn = _Connection(address, name, Mock())
 
     socket_connection_mock.assert_called_once_with(address, loop_mock)
 
@@ -310,11 +310,11 @@ async def test_state_machine_read_failure(
     socket_connection_mock, asyncio_mock
 ):
     """Test _Connection.run, read exception calls close."""
-    address = Mock()
+    address, name = Mock(), Mock()
     loop_mock = Mock()
     asyncio_mock.get_running_loop.return_value = loop_mock
 
-    conn = _Connection(address, Mock())
+    conn = _Connection(address, name, Mock())
     conn.state = ConnectionState.CONNECTED
 
     socket_connection_mock.assert_called_once_with(address, loop_mock)
@@ -337,11 +337,11 @@ async def test_state_machine_close_failure(
     socket_connection_mock, asyncio_mock
 ):
     """Test _Connection.run, error calling close."""
-    address = Mock()
+    address, name = Mock(), Mock()
     loop_mock = Mock()
     asyncio_mock.get_running_loop.return_value = loop_mock
 
-    conn = _Connection(address, Mock())
+    conn = _Connection(address, name, Mock())
     conn.state = ConnectionState.ERROR
 
     socket_connection_mock.assert_called_once_with(address, loop_mock)
@@ -362,11 +362,11 @@ async def test_state_machine_close_failure(
 @pytest.mark.asyncio
 async def test_state_machine_closed(socket_connection_mock, asyncio_mock):
     """Test _Connection.run, error state results in closing."""
-    address = Mock()
+    address, name = Mock(), Mock()
     loop_mock = Mock()
     asyncio_mock.get_running_loop.return_value = loop_mock
 
-    conn = _Connection(address, Mock())
+    conn = _Connection(address, name, Mock())
     conn.state = ConnectionState.ERROR
 
     socket_connection_mock.assert_called_once_with(address, loop_mock)
@@ -385,11 +385,11 @@ async def test_state_machine_unknown_state_raises(
     socket_connection_mock, asyncio_mock
 ):
     """Test _Connection.run, unknown state raises."""
-    address = Mock()
+    address, name = Mock(), Mock()
     loop_mock = Mock()
     asyncio_mock.get_running_loop.return_value = loop_mock
 
-    conn = _Connection(address, Mock())
+    conn = _Connection(address, name, Mock())
     conn.state = ConnectionState.UNKNOWN
 
     socket_connection_mock.assert_called_once_with(address, loop_mock)

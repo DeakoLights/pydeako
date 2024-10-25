@@ -72,18 +72,22 @@ async def test_init_connection_timeout_connecting(
     create_connection_mock,
 ):
     """Test _Manager.init_connection with timeout."""
-    address = Mock()
+    address, name = Mock(), Mock()
     get_address = AsyncMock()
 
     manager = _Manager(get_address, Mock())
 
-    get_address.return_value = address
+    get_address.return_value = address, name
     connection_mock_instance = connection_mock.return_value
     connection_mock_instance.is_connected.return_value = False
 
     await manager.init_connection()
 
-    connection_mock.assert_called_once_with(address, manager.incoming_json)
+    connection_mock.assert_called_once_with(
+        address,
+        name,
+        manager.incoming_json,
+    )
 
     assert asyncio_mock.sleep.call_count == CONNECTION_TIMEOUT_S
 
@@ -100,12 +104,12 @@ async def test_init_connection(
     maintain_connection_worker_mock,
 ):
     """Test _Manager.init_connection, success"""
-    address = Mock()
+    address, name = Mock(), Mock()
     get_address = AsyncMock()
 
     manager = _Manager(get_address, Mock())
 
-    get_address.return_value = address
+    get_address.return_value = address, name
     connection_mock_instance = connection_mock.return_value
     connection_mock_instance.is_connected.return_value = True
 
@@ -114,7 +118,11 @@ async def test_init_connection(
     assert asyncio_mock.create_task.call_count == 1
     maintain_connection_worker_mock.assert_called_once()
 
-    connection_mock.assert_called_once_with(address, manager.incoming_json)
+    connection_mock.assert_called_once_with(
+        address,
+        name,
+        manager.incoming_json,
+    )
 
     assert not manager.state.connecting
 

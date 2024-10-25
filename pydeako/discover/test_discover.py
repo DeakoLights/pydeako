@@ -129,7 +129,7 @@ def test_listener_init():
 @patch("socket.inet_ntoa")
 def test_listener_add_service(mock_inet_ntoa):
     """Test Listener.add_service."""
-    address = str(uuid4())
+    address, name = str(uuid4()), str(uuid4())
     converted_address = str(uuid4())
     _type = str(uuid4())
     name = str(uuid4())
@@ -152,7 +152,7 @@ def test_listener_add_service(mock_inet_ntoa):
 
     mock_inet_ntoa.assert_called_with(address)
     zc_mock.get_service_info.assert_called_with(_type, name)
-    add_callback.assert_called_once_with(f"{converted_address}:{port}")
+    add_callback.assert_called_once_with(f"{converted_address}:{port}", name)
     remove_callback.assert_not_called()
 
 
