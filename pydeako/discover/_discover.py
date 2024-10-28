@@ -65,7 +65,7 @@ class DeakoDiscoverer(ServiceBrowser):
             raise DevicesNotFoundException()
         address, name = self.address_pool.get_address()
         _LOGGER.debug("Got address %s, with device name %s", address, name)
-        return address
+        return address, name
 
     def stop(self) -> None:
         """Stop using zeroconf."""

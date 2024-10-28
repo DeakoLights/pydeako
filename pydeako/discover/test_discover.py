@@ -84,9 +84,10 @@ async def test_deako_discoverer_get_address_success(
 
     assert deako_discoverer is not None
 
-    address = await deako_discoverer.get_address()
+    address, name = await deako_discoverer.get_address()
 
     assert address == mock_address
+    assert name == mock_name
 
 
 @patch("pydeako.discover._discover.TIMEOUT_S", 1)
