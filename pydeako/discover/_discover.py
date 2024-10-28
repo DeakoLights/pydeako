@@ -87,7 +87,7 @@ class DeakoListener(ServiceListener):
         _LOGGER.debug("Add service with address type %s, name %s", type_, name)
         addresses = self.__get_addresses(zc, type_, name)
         for address in addresses:
-            self.device_address_callback(address)
+            self.device_address_callback(address, name)
 
     def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
         """Remove addresses associated with service."""

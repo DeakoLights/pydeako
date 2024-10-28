@@ -68,13 +68,13 @@ class _Manager:
             return
         self.state.connecting = True
         try:
-            address = await self.get_address()
+            address, name = await self.get_address()
         except DevicesNotFoundException:
             _LOGGER.warning("No devices to connect to")
             self.create_connection_task()
             self.state.connecting = False
             return
-        connection = _Connection(address, self.incoming_json)
+        connection = _Connection(address, name, self.incoming_json)
         timeout = 0
         while not connection.is_connected() and timeout < CONNECTION_TIMEOUT_S:
             await asyncio.sleep(CONNECTED_POLLING_INTERVAL_S)
