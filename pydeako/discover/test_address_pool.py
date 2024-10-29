@@ -71,3 +71,18 @@ def test_removed():
 
     with pytest.raises(EmptyAddressPool):
         pool.get_address()
+
+
+def test_remove_key_error_ignored():
+    """Test _AddressPool.remove_address."""
+    pool = _AddressPool()
+
+    address, name = str(uuid4()), str(uuid4())
+    pool.add_address(address, name)
+    assert pool.available_addresses() == 1
+
+    pool.remove_address(address)
+
+    assert pool.available_addresses() == 0
+
+    pool.remove_address(address)

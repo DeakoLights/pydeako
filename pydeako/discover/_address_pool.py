@@ -34,4 +34,7 @@ class _AddressPool:
         """
         Remove an address from the pool.
         """
-        del self.addresses[address]
+        try:
+            del self.addresses[address]
+        except KeyError:
+            pass
