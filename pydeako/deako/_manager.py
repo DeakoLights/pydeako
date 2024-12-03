@@ -98,6 +98,12 @@ class _Manager:
         """Close connection."""
         _LOGGER.debug("Closing connection and canceling workers")
         self.state.canceled = True
+
+        # Cancel and clear all pending tasks
+        for task in self.tasks:
+            task.cancel()
+        self.tasks.clear()
+
         if self.worker is not None:
             self.worker.cancel()
             self.worker = None
@@ -118,7 +124,10 @@ class _Manager:
         self.tasks.add(task)
 
         def remove_task(_task):
-            self.tasks.remove(_task)
+            try:
+                self.tasks.remove(_task)
+            except KeyError:
+                pass  # already removed
 
         task.add_done_callback(remove_task)
 
