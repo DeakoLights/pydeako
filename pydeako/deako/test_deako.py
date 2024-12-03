@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from mock import ANY, Mock, patch
 
-from ._deako import Deako, FindDevicesTimeout, DeviceListTimeout
+from ._deako import Deako, FindDevicesError
 
 
 @patch("pydeako.deako._deako._Manager")
@@ -324,9 +324,12 @@ async def test_find_devices_no_expected_devices(asyncio_mock, manager_mock):
     """Test Deako.find_devices no expected devices raises."""
     deako = Deako(Mock())
 
-    with pytest.raises(DeviceListTimeout):
+    with pytest.raises(FindDevicesError) as exc:
         await deako.find_devices()
 
+    assert str(exc.value) == (
+        "Failed to find devices: Timed out waiting for device list response"
+    )
     manager_mock.return_value.send_get_device_list.assert_called_once()
 
 
@@ -339,10 +342,13 @@ async def test_find_devices_devices_timeout(asyncio_mock, manager_mock):
     deako = Deako(Mock())
 
     deako.expected_devices = 42
-
-    with pytest.raises(FindDevicesTimeout):
+    with pytest.raises(FindDevicesError) as exc:
         await deako.find_devices()
 
+    assert str(exc.value) == (
+        "Failed to find devices: Timed out waiting for devices to be found. "
+        "Expected 42 devices but only found 0"
+    )
     manager_mock.return_value.send_get_device_list.assert_called_once()
 
 
@@ -361,6 +367,25 @@ async def test_find_devices(asyncio_mock, manager_mock):
 
     await deako.find_devices()
 
+    manager_mock.return_value.send_get_device_list.assert_called_once()
+
+
+@patch("pydeako.deako._deako._Manager", autospec=True)
+@patch("pydeako.deako._deako.asyncio", autospec=True)
+@pytest.mark.asyncio
+# pylint: disable-next=unused-argument
+async def test_find_devices_send_request_fails(asyncio_mock, manager_mock):
+    """Test Deako.find_devices when sending device list request fails."""
+    deako = Deako(Mock())
+
+    # Make send_get_device_list return False to simulate failure
+    manager_mock.return_value.send_get_device_list.return_value = False
+
+    with pytest.raises(FindDevicesError) as exc:
+        await deako.find_devices()
+    assert str(exc.value) == (
+        "Failed to find devices: Failed to send device list request"
+    )
     manager_mock.return_value.send_get_device_list.assert_called_once()
 
 

@@ -10,12 +10,16 @@ from ._manager import _Manager
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 
-class DeviceListTimeout(Exception):
-    """Device list request timed out."""
+class FindDevicesError(Exception):
+    """Unable to find devices."""
 
+    def __init__(self, reason: str = "unknown") -> None:
+        """Initialize with optional reason string."""
+        self.reason = reason
+        super().__init__()
 
-class FindDevicesTimeout(Exception):
-    """Timeout finding devices."""
+    def __str__(self):
+        return f"Failed to find devices: {self.reason}"
 
 
 # 2s per device to be received to be conservative
@@ -128,7 +132,9 @@ class Deako:
     ) -> None:
         """Request the device list."""
         _LOGGER.info("Finding devices")
-        await self.connection_manager.send_get_device_list()
+        success = await self.connection_manager.send_get_device_list()
+        if not success:
+            raise FindDevicesError("Failed to send device list request")
         remaining = timeout
         # wait for device list
         while self.expected_devices == 0 and remaining > 0:
@@ -140,7 +146,9 @@ class Deako:
 
         # if we get a response, expected_devices will be at least 1
         if self.expected_devices == 0:
-            raise DeviceListTimeout()
+            raise FindDevicesError(
+                "Timed out waiting for device list response",
+            )
 
         remaining = self.expected_devices * DEVICE_FOUND_TIME_FACTOR_S
         while len(self.devices) != self.expected_devices and remaining > 0:
@@ -156,7 +164,11 @@ class Deako:
         _LOGGER.debug("found %i devices", len(self.devices))
 
         if len(self.devices) != self.expected_devices and remaining == 0:
-            raise FindDevicesTimeout()
+            raise FindDevicesError(
+                f"Timed out waiting for devices to be found. Expected "
+                f"{self.expected_devices} devices but only found "
+                f"{len(self.devices)}",
+            )
 
     async def control_device(
         self, uuid: str, power: bool, dim: int | None = None
