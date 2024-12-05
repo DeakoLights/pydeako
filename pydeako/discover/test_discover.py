@@ -187,18 +187,31 @@ def test_listener_remove_service(mock_inet_ntoa):
     remove_callback.assert_called_once_with(f"{converted_address}:{port}")
 
 
-def test_listener_update_service():
+@patch("socket.inet_ntoa")
+def test_listener_update_service(mock_inet_ntoa):
     """Test Listener.update_service."""
+    address = str(uuid4())
+    converted_address = str(uuid4())
     _type = str(uuid4())
     name = str(uuid4())
+    port = 69
+
+    mock_inet_ntoa.return_value = converted_address
 
     add_callback = Mock()
     remove_callback = Mock()
     zc_mock = Mock(Zeroconf)
+    mock_info = Mock()
+    mock_info.addresses = [address]
+    mock_info.port = port
+
+    zc_mock.get_service_info.return_value = mock_info
 
     listener = DeakoListener(add_callback, remove_callback)
 
     listener.update_service(zc_mock, _type, name)
 
-    add_callback.assert_not_called()
+    mock_inet_ntoa.assert_called_with(address)
+    zc_mock.get_service_info.assert_called_with(_type, name)
+    add_callback.assert_called_once_with(f"{converted_address}:{port}", name)
     remove_callback.assert_not_called()
