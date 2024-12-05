@@ -242,11 +242,17 @@ async def test_send_get_device_list(device_list_request_mock, request_mock):
 
     manager = _Manager(AsyncMock(), Mock(), client_name=client_name)
 
-    await manager.send_get_device_list()
-
+    # Test with connection
+    manager.connection = AsyncMock()
+    result = await manager.send_get_device_list()
     device_list_request_mock.assert_called_once_with(source=client_name)
-
     request_mock.assert_called_once_with(device_list_request_mock.return_value)
+    assert result is True
+
+    # Test without connection
+    manager.connection = None
+    result = await manager.send_get_device_list()
+    assert result is False
 
 
 @pytest.mark.parametrize("completed_callback", [None, "some_callback"])

@@ -159,9 +159,9 @@ class _Manager:
         else:
             self.incoming_json_callback(incoming_json)
 
-    async def send_get_device_list(self) -> None:
+    async def send_get_device_list(self) -> bool:
         """Send the device list request."""
-        await self.send_request(
+        return await self.send_request(
             _Request(device_list_request(source=self.client_name)),
         )
 
@@ -182,9 +182,11 @@ class _Manager:
             )
         )
 
-    async def send_request(self, req: _Request):
+    async def send_request(self, req: _Request) -> bool:
         """Send a request."""
         if self.connection is not None:
             await self.connection.send_data(req.get_body_str())
-        else:
-            _LOGGER.warning("No connection to send data to")
+            return True
+
+        _LOGGER.warning("No connection to send data to")
+        return False
