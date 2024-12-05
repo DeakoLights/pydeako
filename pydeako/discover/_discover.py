@@ -107,6 +107,9 @@ class DeakoListener(ServiceListener):
             type_,
             name,
         )
+        addresses = self.__get_addresses(zc, type_, name)
+        for address in addresses:
+            self.device_address_callback(address, name)
 
     def __get_addresses(
         self, zeroconf: Zeroconf, address_type: str, name: str
