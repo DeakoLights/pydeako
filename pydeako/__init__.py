@@ -6,3 +6,4 @@ pydeako module provides the following:
 """
 from . import discover
 from . import models
+from .deako import Deako, FindDevicesError
