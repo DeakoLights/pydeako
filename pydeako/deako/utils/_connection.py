@@ -58,13 +58,22 @@ class _Connection:
         self.init_run()
 
     async def send_data(self, data_to_send: str) -> None:
-        """Send data to socket."""
+        """Send data to socket.
+
+        On send failure, state must flip to ERROR immediately so the
+        rest of the state machine (and higher-level callers like the
+        pool) see the failure without polling. The ``except OSError``
+        is intentionally narrow: TypeError, AttributeError, and other
+        programming errors should propagate as bugs, not be converted
+        into connection-state changes.
+        """
         _LOGGER.debug("[%s] Sending data: %s", self.address, data_to_send)
         try:
             await self.socket.send_bytes(str.encode(data_to_send))
-        except Exception as exc:  # pylint: disable=broad-exception-caught
+        except OSError as exc:
             _LOGGER.error("Error sending data: %s", exc)
             self.state = ConnectionState.ERROR
+            raise
 
     async def read_socket(self) -> None:
         """Read data from socket."""

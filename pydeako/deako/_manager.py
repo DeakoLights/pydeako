@@ -52,13 +52,29 @@ class _Manager:
         get_address,
         incoming_json_callback,
         client_name: str | None = None,
+        on_connection_lost: Callable | None = None,
     ) -> None:
-        """Initialize with get address function and incoming json callback."""
+        """Initialize with get address function and incoming json callback.
+
+        Args:
+            get_address: Async callable returning (address, name) tuple.
+            incoming_json_callback: Called with parsed JSON from the bridge.
+            client_name: Optional client name sent in protocol messages.
+            on_connection_lost: Optional callback invoked when the connection
+                drops (ping timeout). Called before auto-reconnect starts.
+        """
         self.get_address = get_address
         self.incoming_json_callback = incoming_json_callback
         self.pong_received = False
         self.tasks = set()
         self.client_name = client_name
+        self.on_connection_lost = on_connection_lost
+        # When False, every reconnect-scheduling call site is skipped
+        # (init_connection devices-not-found, init_connection connect
+        # timeout, maintain_connection_worker ping timeout). The pool
+        # disables this so failover owns reconnect, not _Manager.
+        # Default True preserves 0.x behavior for single-bridge callers.
+        self.auto_reconnect: bool = True
         self.state = _ManagerState()
 
     async def init_connection(self) -> None:
@@ -71,7 +87,8 @@ class _Manager:
             address, name = await self.get_address()
         except DevicesNotFoundException:
             _LOGGER.warning("No devices to connect to")
-            self.create_connection_task()
+            if self.auto_reconnect:
+                self.create_connection_task()
             self.state.connecting = False
             return
         connection = _Connection(address, name, self.incoming_json)
@@ -83,7 +100,8 @@ class _Manager:
             _LOGGER.error("Timeout attempting to connect. Trying again")
             self.state.connecting = False
             connection.close()
-            self.create_connection_task()
+            if self.auto_reconnect:
+                self.create_connection_task()
             return
         self.connection = connection
         # init connection watching
@@ -139,16 +157,30 @@ class _Manager:
                 break
             self.pong_received = False
             _LOGGER.debug("Pinging for responsiveness")
-            await self.send_request(
-                _Request(device_ping_request(source=self.client_name)),
-            )
+            try:
+                await self.send_request(
+                    _Request(device_ping_request(source=self.client_name)),
+                )
+            except OSError as exc:
+                # Send failure during health-check ping. Do not reraise;
+                # falling through with pong_received=False lets the
+                # "never received pong" branch below run the existing
+                # connection-drop path (on_connection_lost + close +
+                # reconnect under auto_reconnect).
+                _LOGGER.warning("Ping send failed: %s", exc)
             await asyncio.sleep(PING_WORKER_WAIT_S)
             if self.pong_received:
                 _LOGGER.debug("Pong received")
             else:
                 _LOGGER.warning("Never received pong! Dumping this connection")
+                if self.on_connection_lost is not None:
+                    try:
+                        self.on_connection_lost()
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        _LOGGER.warning("on_connection_lost callback error")
                 self.close()
-                self.create_connection_task()
+                if self.auto_reconnect:
+                    self.create_connection_task()
                 break
 
     def incoming_json(self, incoming_json: dict) -> None:
@@ -171,9 +203,14 @@ class _Manager:
         power,
         dim=None,
         completed_callback: Callable | None = None,
-    ) -> None:
-        """Send a state change request."""
-        await self.send_request(
+    ) -> bool:
+        """Send a state change request.
+
+        Returns True on successful enqueue, False only when there is no
+        active connection. OSError from a real send failure propagates
+        to the caller so failover / the pool can act on it.
+        """
+        return await self.send_request(
             _Request(
                 state_change_request(
                     uuid, power, dim, source=self.client_name,

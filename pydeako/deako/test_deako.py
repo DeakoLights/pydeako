@@ -1,11 +1,13 @@
 """Test Deako"""
 
-import json
+import logging
 from uuid import uuid4
+import json
 import pytest
-from mock import ANY, Mock, patch
+from mock import ANY, AsyncMock, Mock, patch
 
 from ._deako import Deako, FindDevicesError
+from .utils._socket import NoSocketException
 
 
 @patch("pydeako.deako._deako._Manager")
@@ -17,9 +19,33 @@ def test_init(manager_mock):
     deako = Deako(get_address_mock, client_name=client_name)
 
     manager_mock.assert_called_once_with(
-        get_address_mock, deako.incoming_json, client_name=client_name
+        get_address_mock,
+        deako.incoming_json,
+        client_name=client_name,
+        on_connection_lost=None,
     )
     assert deako is not None
+
+
+@patch("pydeako.deako._deako._Manager")
+def test_on_connection_lost_forwarded_to_manager(manager_mock):
+    """Deako forwards on_connection_lost kwarg to the _Manager."""
+    get_address_mock = Mock()
+    client_name = Mock()
+    callback = Mock()
+
+    Deako(
+        get_address_mock,
+        client_name=client_name,
+        on_connection_lost=callback,
+    )
+
+    manager_mock.assert_called_once_with(
+        get_address_mock,
+        ANY,  # incoming_json bound method
+        client_name=client_name,
+        on_connection_lost=callback,
+    )
 
 
 def test_update_state_uuid_not_found():
@@ -466,3 +492,158 @@ async def test_get_dimmable(device_exists, dimmable):
         assert is_dimmable == dimmable
     else:
         assert is_dimmable is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 coverage: two-layer control_device contract
+# (private _control_device_strict raises; public control_device preserves
+# 0.x behavior with a narrow catch), plus Deako.is_connected() wrapper.
+# ---------------------------------------------------------------------------
+
+
+@patch("pydeako.deako._deako._Manager")
+@pytest.mark.asyncio
+async def test_control_device_strict_raises_on_no_connection(manager_mock):
+    """_control_device_strict raises NoSocketException when there is no
+    active connection (send_state_change returned False)."""
+    manager_instance = manager_mock.return_value
+    manager_instance.send_state_change = AsyncMock(return_value=False)
+
+    deako = Deako(Mock())
+
+    with pytest.raises(NoSocketException):
+        # pylint: disable-next=protected-access
+        await deako._control_device_strict(
+            uuid="uuid-1", power=True, dim=None,
+        )
+
+    manager_instance.send_state_change.assert_called_once_with(
+        "uuid-1", True, None, completed_callback=ANY,
+    )
+
+
+@patch("pydeako.deako._deako._Manager")
+@pytest.mark.asyncio
+async def test_control_device_strict_propagates_send_oserror(manager_mock):
+    """_control_device_strict propagates OSError from a real send failure."""
+    manager_instance = manager_mock.return_value
+    manager_instance.send_state_change = AsyncMock(
+        side_effect=OSError("broken pipe"),
+    )
+
+    deako = Deako(Mock())
+
+    with pytest.raises(OSError):
+        # pylint: disable-next=protected-access
+        await deako._control_device_strict(
+            uuid="uuid-1", power=True, dim=None,
+        )
+
+
+@patch("pydeako.deako._deako._Manager")
+@pytest.mark.asyncio
+async def test_control_device_public_returns_none_on_no_connection(
+    manager_mock,
+):
+    """Public control_device swallows NoSocketException, returns None."""
+    manager_instance = manager_mock.return_value
+    manager_instance.send_state_change = AsyncMock(return_value=False)
+
+    deako = Deako(Mock())
+
+    result = await deako.control_device("uuid-1", True, None)
+
+    assert result is None
+
+
+@patch("pydeako.deako._deako._Manager")
+@pytest.mark.asyncio
+async def test_control_device_public_returns_none_on_send_oserror(
+    manager_mock,
+):
+    """Public control_device swallows OSError, returns None."""
+    manager_instance = manager_mock.return_value
+    manager_instance.send_state_change = AsyncMock(
+        side_effect=OSError("broken pipe"),
+    )
+
+    deako = Deako(Mock())
+
+    result = await deako.control_device("uuid-1", True, None)
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_control_device_public_does_not_catch_unrelated_exceptions():
+    """Public control_device's catch is narrow: unrelated exceptions
+    (e.g. a ValueError from an upstream validation path) propagate
+    unchanged. Proves the wrapper is not a bare except Exception."""
+    deako = Deako(Mock())
+
+    with patch.object(
+        deako,
+        "_control_device_strict",
+        AsyncMock(side_effect=ValueError("bad uuid")),
+    ):
+        with pytest.raises(ValueError):
+            await deako.control_device("uuid-1", True, None)
+
+
+@patch("pydeako.deako._deako._Manager")
+@pytest.mark.asyncio
+async def test_control_device_public_logs_at_debug_on_failure(
+    manager_mock, caplog,
+):
+    """Public control_device logs send failures at DEBUG, not WARNING."""
+    manager_instance = manager_mock.return_value
+    manager_instance.send_state_change = AsyncMock(return_value=False)
+
+    deako = Deako(Mock())
+
+    caplog.set_level(logging.DEBUG, logger="pydeako.deako")
+
+    await deako.control_device("uuid-1", True, None)
+
+    debug_hits = [
+        record for record in caplog.records
+        if record.levelno == logging.DEBUG
+        and "control_device send failed" in record.message
+    ]
+    assert debug_hits, "expected a DEBUG log on swallowed failure"
+    # Nothing at WARNING or above for this path.
+    assert not any(
+        record.levelno >= logging.WARNING
+        and "control_device send failed" in record.message
+        for record in caplog.records
+    )
+
+
+def test_is_connected_no_connection():
+    """is_connected is False when connection_manager.connection is None."""
+    deako = Deako(Mock())
+    deako.connection_manager.connection = None
+
+    assert deako.is_connected() is False
+
+
+def test_is_connected_connection_not_connected():
+    """is_connected is False when the underlying _Connection reports False."""
+    deako = Deako(Mock())
+    connection_mock = Mock()
+    connection_mock.is_connected.return_value = False
+    deako.connection_manager.connection = connection_mock
+
+    assert deako.is_connected() is False
+    connection_mock.is_connected.assert_called_once()
+
+
+def test_is_connected_connected():
+    """is_connected is True only when the _Connection reports CONNECTED."""
+    deako = Deako(Mock())
+    connection_mock = Mock()
+    connection_mock.is_connected.return_value = True
+    deako.connection_manager.connection = connection_mock
+
+    assert deako.is_connected() is True
+    connection_mock.is_connected.assert_called_once()

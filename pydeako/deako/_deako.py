@@ -2,10 +2,11 @@
 import asyncio
 
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from ..models import ResponseType
 from ._manager import _Manager
+from .utils._socket import NoSocketException
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -38,12 +39,27 @@ class Deako:
     devices: dict[str, Any]
     expected_devices: int
 
-    def __init__(self, get_address, client_name: str | None = None) -> None:
-        """Init manager for Deako local integration."""
+    def __init__(
+        self,
+        get_address,
+        client_name: str | None = None,
+        on_connection_lost: Callable | None = None,
+    ) -> None:
+        """Init manager for Deako local integration.
+
+        Args:
+            get_address: Async callable returning (address, name) tuple.
+            client_name: Optional client name sent in protocol messages.
+            on_connection_lost: Optional callback invoked by the
+                underlying _Manager when the connection drops (ping
+                timeout). Forwarded as-is so the connection pool can
+                hook failover on connection loss.
+        """
         self.connection_manager = _Manager(
             get_address,
             self.incoming_json,
             client_name=client_name,
+            on_connection_lost=on_connection_lost,
         )
         self.devices: dict[str, Any] = {}
         self.expected_devices = 0
@@ -170,17 +186,61 @@ class Deako:
                 f"{len(self.devices)}",
             )
 
-    async def control_device(
-        self, uuid: str, power: bool, dim: int | None = None
+    async def _control_device_strict(
+        self, uuid: str, power: bool, dim: int | None = None,
     ) -> None:
-        """Add control request to queue."""
+        """Strict control path consumed by the connection pool.
 
+        Raises NoSocketException when the underlying
+        send_state_change reports no active connection (False
+        return), and propagates OSError on a real send failure.
+        Not part of the public 0.x surface; the pool uses this to
+        drive failover on observed send failures. Public callers
+        should use control_device(), which preserves 0.x behavior.
+        """
         def completed_callback():
             self.update_state(uuid, power, dim)
 
-        await self.connection_manager.send_state_change(
-            uuid, power, dim, completed_callback=completed_callback
+        success = await self.connection_manager.send_state_change(
+            uuid, power, dim, completed_callback=completed_callback,
         )
+        if not success:
+            raise NoSocketException()
+
+    async def control_device(
+        self, uuid: str, power: bool, dim: int | None = None,
+    ) -> None:
+        """Add control request to queue.
+
+        Preserves existing public behavior: any send failure (no
+        active connection, or OSError from the socket layer) is
+        caught here, logged at DEBUG, and swallowed so HA callers
+        see no observable change. `_control_device_strict()` is
+        the raising path the pool uses to drive failover. The
+        tuple `(OSError, NoSocketException)` is retained for
+        explicitness even though NoSocketException is an OSError
+        subclass. Non-matching exceptions propagate unchanged so
+        programming errors remain visible.
+        """
+        try:
+            await self._control_device_strict(uuid, power, dim)
+        except (OSError, NoSocketException):
+            _LOGGER.debug(
+                "control_device send failed for %s; "
+                "swallowing per 0.x-compat contract",
+                uuid,
+            )
+
+    def is_connected(self) -> bool:
+        """Return True iff the underlying socket reports CONNECTED.
+
+        Thin public wrapper over the confirmed manager state. The
+        connection pool uses this instead of reaching into
+        connection_manager so the check stays a single supported
+        entry point on Deako.
+        """
+        conn = self.connection_manager.connection
+        return conn is not None and conn.is_connected()
 
     def get_name(self, uuid: str) -> str | None:
         """Get a device's name by uuid."""

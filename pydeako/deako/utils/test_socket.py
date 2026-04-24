@@ -9,6 +9,20 @@ import pytest
 from ._socket import _SocketConnection, NoSocketException
 
 
+def test_no_socket_exception_is_oserror_subclass():
+    """NoSocketException inherits from OSError (decision 17).
+
+    A single narrow `except OSError:` covers both a real socket
+    send failure and the 'no socket at all' sentinel. This is the
+    one externally observable widening in this PR: any
+    `except OSError:` that previously did not match
+    NoSocketException will now match it.
+    """
+    assert issubclass(NoSocketException, OSError)
+    # Instance check too, since mocks often raise the instance form.
+    assert isinstance(NoSocketException(), OSError)
+
+
 def test_init():
     """Test _SocketConnection.__init__."""
     address = str(uuid4())
@@ -27,7 +41,7 @@ def test_init():
 async def test_connect_socket(socket_mock):
     """Test _SocketConnection.connect_socket."""
     address = str(uuid4())
-    port = str(uuid4())
+    port = "23"
     full_address = f"{address}:{port}"
     loop_mock = AsyncMock()
 
@@ -40,7 +54,7 @@ async def test_connect_socket(socket_mock):
     )
     socket_mock.socket.return_value.setblocking.assert_called_once_with(False)
     loop_mock.sock_connect.assert_called_once_with(
-        socket_mock.socket.return_value, (address, port)
+        socket_mock.socket.return_value, (address, 23)
     )
 
 

@@ -6,7 +6,7 @@ import pytest
 from mock import AsyncMock, call, Mock, patch
 
 from ._connection import _Connection, ConnectionState, UnknownStateException
-from ._socket import _SocketConnection
+from ._socket import _SocketConnection, NoSocketException
 
 
 @patch("pydeako.deako.utils._connection.asyncio")
@@ -31,19 +31,21 @@ def test_init(init_run_mock, socket_connection_mock, asyncio_mock):
     init_run_mock.assert_called_once()
 
 
-@pytest.mark.parametrize("raise_error,", [True, False])
 @patch("pydeako.deako.utils._connection.asyncio")
 @patch(
     "pydeako.deako.utils._connection._SocketConnection",
     spec=_SocketConnection,
 )
 @pytest.mark.asyncio
-async def test_send_data(
+async def test_send_data_happy_path(
     socket_connection_mock,
     asyncio_mock,
-    raise_error,
 ):
-    """Test _Connection.send_data."""
+    """Test _Connection.send_data on a successful send.
+
+    No exception is raised, state is unchanged, and the encoded
+    bytes reach the socket layer.
+    """
     data = str(uuid4())
     data_bytes = str.encode(data)
     address, name = Mock(), Mock()
@@ -55,19 +57,91 @@ async def test_send_data(
     socket_connection_mock.assert_called_once_with(address, loop_mock)
     socket_connection_mock_instance = socket_connection_mock.return_value
 
-    if raise_error:
-        socket_connection_mock_instance.send_bytes.side_effect = Exception()
-
     await conn.send_data(data)
 
     socket_connection_mock_instance.send_bytes.assert_called_once_with(
         data_bytes
     )
-    assert (
-        conn.state == ConnectionState.ERROR
-        if raise_error
-        else ConnectionState.NOT_STARTED
+    assert conn.state == ConnectionState.NOT_STARTED
+
+
+@patch("pydeako.deako.utils._connection.asyncio")
+@patch(
+    "pydeako.deako.utils._connection._SocketConnection",
+    spec=_SocketConnection,
+)
+@pytest.mark.asyncio
+async def test_send_data_reraises_oserror(
+    socket_connection_mock,
+    asyncio_mock,
+):
+    """Test _Connection.send_data re-raises OSError.
+
+    Per the decision-17 send-failure contract: on OSError from the
+    underlying socket send, state flips to ERROR and the exception
+    propagates to the caller so _Manager.send_request can surface
+    it. Other exceptions are not covered here (see other tests).
+    """
+    data = str(uuid4())
+    data_bytes = str.encode(data)
+    address, name = Mock(), Mock()
+    loop_mock = Mock()
+    asyncio_mock.get_running_loop.return_value = loop_mock
+
+    conn = _Connection(address, name, Mock())
+
+    socket_connection_mock.assert_called_once_with(address, loop_mock)
+    socket_connection_mock_instance = socket_connection_mock.return_value
+
+    socket_connection_mock_instance.send_bytes.side_effect = OSError()
+
+    with pytest.raises(OSError):
+        await conn.send_data(data)
+
+    socket_connection_mock_instance.send_bytes.assert_called_once_with(
+        data_bytes
     )
+    assert conn.state == ConnectionState.ERROR
+
+
+@patch("pydeako.deako.utils._connection.asyncio")
+@patch(
+    "pydeako.deako.utils._connection._SocketConnection",
+    spec=_SocketConnection,
+)
+@pytest.mark.asyncio
+async def test_send_data_reraises_nosocketexception(
+    socket_connection_mock,
+    asyncio_mock,
+):
+    """Test _Connection.send_data re-raises NoSocketException.
+
+    Because NoSocketException now subclasses OSError (decision 17),
+    the same narrow `except OSError:` in send_data catches and
+    re-raises it. State flips to ERROR.
+    """
+    data = str(uuid4())
+    data_bytes = str.encode(data)
+    address, name = Mock(), Mock()
+    loop_mock = Mock()
+    asyncio_mock.get_running_loop.return_value = loop_mock
+
+    conn = _Connection(address, name, Mock())
+
+    socket_connection_mock.assert_called_once_with(address, loop_mock)
+    socket_connection_mock_instance = socket_connection_mock.return_value
+
+    socket_connection_mock_instance.send_bytes.side_effect = (
+        NoSocketException()
+    )
+
+    with pytest.raises(NoSocketException):
+        await conn.send_data(data)
+
+    socket_connection_mock_instance.send_bytes.assert_called_once_with(
+        data_bytes
+    )
+    assert conn.state == ConnectionState.ERROR
 
 
 @pytest.mark.parametrize("raise_read_error", [True, False])

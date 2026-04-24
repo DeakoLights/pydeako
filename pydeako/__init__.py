@@ -3,10 +3,17 @@ pydeako module provides the following:
  - models to interact with Deako devices locally with a socket connection
  - implementation of a Deako socket client
  - mdns discovery client
+ - connection pool with failover support
 """
 # pylint: disable=duplicate-code
 from .discover import DeakoDiscoverer, DevicesNotFoundException
-from .deako import Deako, FindDevicesError
+from .deako import (
+    Deako,
+    FindDevicesError,
+    DeakoConnectionPool,
+    ConnectionPoolState,
+    NoSocketException,
+)
 from .models import (
     RequestType,
     ResponseType,
@@ -20,6 +27,9 @@ __all__ = [
     'DevicesNotFoundException',
     'Deako',
     'FindDevicesError',
+    'DeakoConnectionPool',
+    'ConnectionPoolState',
+    'NoSocketException',
     'RequestType',
     'ResponseType',
     'device_list_request',

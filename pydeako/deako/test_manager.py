@@ -2,6 +2,8 @@
 Test the SocketConnection manager.
 """
 
+import logging
+
 import pytest
 from mock import AsyncMock, Mock, patch
 
@@ -325,3 +327,210 @@ async def test_send_request_no_connection(
     await manager.send_request(request_mock)
 
     connection_mock.send_data.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 coverage: on_connection_lost callback, ping-send OSError guard,
+# send_state_change contract, and auto_reconnect gating of the three
+# create_connection_task() sites.
+# ---------------------------------------------------------------------------
+
+
+@patch("pydeako.deako._manager._Manager.close")
+@patch("pydeako.deako._manager._Manager.create_connection_task")
+@patch("pydeako.deako._manager.asyncio", autospec=True)
+@pytest.mark.asyncio
+async def test_maintain_connection_worker_invokes_on_connection_lost(
+    asyncio_mock, create_connection_mock, close_mock
+):
+    """on_connection_lost fires once on ping timeout, before reconnect."""
+    callback = Mock()
+
+    manager = _Manager(AsyncMock(), Mock(), on_connection_lost=callback)
+
+    await manager.maintain_connection_worker()
+
+    assert len(asyncio_mock.sleep.mock_calls) == 2
+    callback.assert_called_once()
+    close_mock.assert_called_once()
+    create_connection_mock.assert_called_once()
+
+
+@patch("pydeako.deako._manager._Manager.close")
+@patch("pydeako.deako._manager._Manager.create_connection_task")
+@patch("pydeako.deako._manager.asyncio", autospec=True)
+@pytest.mark.asyncio
+async def test_maintain_worker_callback_exception_swallowed(
+    asyncio_mock, create_connection_mock, close_mock, caplog,
+):
+    """Exceptions from on_connection_lost are caught, logged at WARNING."""
+    callback = Mock(side_effect=RuntimeError("callback boom"))
+
+    manager = _Manager(AsyncMock(), Mock(), on_connection_lost=callback)
+
+    caplog.set_level(logging.WARNING, logger="pydeako.deako")
+
+    await manager.maintain_connection_worker()
+
+    assert len(asyncio_mock.sleep.mock_calls) == 2
+    callback.assert_called_once()
+    close_mock.assert_called_once()
+    create_connection_mock.assert_called_once()
+    assert any(
+        record.levelno == logging.WARNING
+        and "on_connection_lost callback error" in record.message
+        for record in caplog.records
+    )
+
+
+@patch("pydeako.deako._manager._Manager.close")
+@patch("pydeako.deako._manager._Manager.create_connection_task")
+@patch("pydeako.deako._manager.asyncio", autospec=True)
+@pytest.mark.asyncio
+async def test_maintain_connection_worker_no_on_connection_lost(
+    asyncio_mock, create_connection_mock, close_mock
+):
+    """Ping timeout with no callback still closes and reconnects."""
+    manager = _Manager(AsyncMock(), Mock())
+
+    assert manager.on_connection_lost is None
+
+    await manager.maintain_connection_worker()
+
+    assert len(asyncio_mock.sleep.mock_calls) == 2
+    close_mock.assert_called_once()
+    create_connection_mock.assert_called_once()
+
+
+@patch("pydeako.deako._manager._Manager.close")
+@patch("pydeako.deako._manager._Manager.create_connection_task")
+@patch("pydeako.deako._manager._Manager.send_request")
+@patch("pydeako.deako._manager.asyncio", autospec=True)
+@pytest.mark.asyncio
+async def test_maintain_worker_handles_ping_send_oserror(
+    asyncio_mock, send_request_mock, create_connection_mock, close_mock,
+):
+    """Ping-send OSError is caught; worker falls through to no-pong branch."""
+    send_request_mock.side_effect = OSError("broken pipe")
+
+    manager = _Manager(AsyncMock(), Mock())
+
+    await manager.maintain_connection_worker()
+
+    assert len(asyncio_mock.sleep.mock_calls) == 2
+    send_request_mock.assert_called_once()
+    close_mock.assert_called_once()
+    create_connection_mock.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_send_state_change_returns_false_when_disconnected():
+    """send_state_change returns False only for missing connection."""
+    manager = _Manager(AsyncMock(), Mock())
+    manager.connection = None
+
+    result = await manager.send_state_change(
+        uuid="uuid-1", power=True, dim=None,
+    )
+
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_send_state_change_propagates_oserror_when_connected():
+    """Real send failure surfaces as OSError, not a silent False."""
+    connection_mock = AsyncMock()
+    connection_mock.send_data.side_effect = OSError("broken pipe")
+
+    manager = _Manager(AsyncMock(), Mock())
+    manager.connection = connection_mock
+
+    with pytest.raises(OSError):
+        await manager.send_state_change(
+            uuid="uuid-1", power=True, dim=None,
+        )
+
+
+@patch("pydeako.deako._manager._Manager.create_connection_task")
+@pytest.mark.asyncio
+async def test_no_reconnect_when_auto_reconnect_false_devices_not_found(
+    create_connection_mock,
+):
+    """auto_reconnect=False skips reconnect on DevicesNotFoundException."""
+    get_address = AsyncMock()
+    get_address.side_effect = DevicesNotFoundException()
+
+    manager = _Manager(get_address, Mock())
+    manager.auto_reconnect = False
+
+    await manager.init_connection()
+
+    create_connection_mock.assert_not_called()
+    assert manager.state.connecting is False
+
+
+@patch("pydeako.deako._manager._Manager.create_connection_task")
+@patch("pydeako.deako._manager._Connection")
+@patch("pydeako.deako._manager.asyncio", autospec=True)
+@pytest.mark.asyncio
+async def test_no_reconnect_when_auto_reconnect_false_connect_timeout(
+    asyncio_mock, connection_mock, create_connection_mock,
+):
+    """auto_reconnect=False skips reconnect at connect-timeout site."""
+    address, name = Mock(), Mock()
+    get_address = AsyncMock()
+    get_address.return_value = address, name
+
+    connection_mock_instance = connection_mock.return_value
+    connection_mock_instance.is_connected.return_value = False
+
+    manager = _Manager(get_address, Mock())
+    manager.auto_reconnect = False
+
+    await manager.init_connection()
+
+    connection_mock.assert_called_once_with(
+        address, name, manager.incoming_json,
+    )
+    assert asyncio_mock.sleep.call_count == CONNECTION_TIMEOUT_S
+    connection_mock_instance.close.assert_called_once()
+    create_connection_mock.assert_not_called()
+
+
+@patch("pydeako.deako._manager._Manager.close")
+@patch("pydeako.deako._manager._Manager.create_connection_task")
+@patch("pydeako.deako._manager.asyncio", autospec=True)
+@pytest.mark.asyncio
+async def test_no_reconnect_when_auto_reconnect_false_ping_timeout(
+    asyncio_mock, create_connection_mock, close_mock,
+):
+    """auto_reconnect=False skips reconnect at ping-timeout site."""
+    manager = _Manager(AsyncMock(), Mock())
+    manager.auto_reconnect = False
+
+    await manager.maintain_connection_worker()
+
+    assert len(asyncio_mock.sleep.mock_calls) == 2
+    close_mock.assert_called_once()
+    create_connection_mock.assert_not_called()
+
+
+@patch("pydeako.deako._manager._Manager.close")
+@patch("pydeako.deako._manager._Manager.create_connection_task")
+@patch("pydeako.deako._manager.asyncio", autospec=True)
+@pytest.mark.asyncio
+async def test_no_reconnect_auto_reconnect_false_ping_timeout_with_callback(
+    asyncio_mock, create_connection_mock, close_mock,
+):
+    """auto_reconnect=False fires callback and closes, but no reconnect."""
+    callback = Mock()
+
+    manager = _Manager(AsyncMock(), Mock(), on_connection_lost=callback)
+    manager.auto_reconnect = False
+
+    await manager.maintain_connection_worker()
+
+    assert len(asyncio_mock.sleep.mock_calls) == 2
+    callback.assert_called_once()
+    close_mock.assert_called_once()
+    create_connection_mock.assert_not_called()

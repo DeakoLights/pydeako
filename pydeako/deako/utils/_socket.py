@@ -10,8 +10,15 @@ _LOGGER: logging.Logger = logging.getLogger(__package__)
 _MAX_PACKET_SIZE_BYTES = 2048
 
 
-class NoSocketException(Exception):
-    """No socket to perform ops exception"""
+class NoSocketException(OSError):
+    """No socket to perform ops exception.
+
+    Subclasses OSError so callers can use a single narrow catch for
+    real send failures from the underlying socket layer (an OSError
+    from sock_sendall / sock_recv) and the "no socket at all" case
+    (NoSocketException raised by _SocketConnection when self.sock is
+    None).
+    """
 
 
 class _SocketConnection:
@@ -32,7 +39,8 @@ class _SocketConnection:
         self.sock.setblocking(False)
         _LOGGER.info("Connecting to %s", self.address)
         address, port = self.address.split(":")
-        await self.loop.sock_connect(self.sock, (address, port))
+        # split() returns strings; sock_connect() expects an integer port.
+        await self.loop.sock_connect(self.sock, (address, int(port)))
 
     def close_socket(self) -> None:
         """Close socket."""
