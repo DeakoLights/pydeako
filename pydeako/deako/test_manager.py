@@ -2,11 +2,16 @@
 Test the SocketConnection manager.
 """
 
+import asyncio
+import json
+
 import pytest
 from mock import AsyncMock, Mock, patch
 
 from ..discover import DevicesNotFoundException
+from ..models import state_change_request
 from ._manager import _Manager, CONNECTION_TIMEOUT_S
+from ._request import _Request
 
 
 def test_init():
@@ -299,12 +304,13 @@ async def test_send_request(
     connection_mock = AsyncMock()
 
     request_mock.get_body_str.return_value = "some message"
+    request_mock.get_transaction_id.return_value = None
 
     manager = _Manager(AsyncMock(), Mock(), client_name=client_name)
 
     manager.connection = connection_mock
 
-    await manager.send_request(request_mock)
+    assert await manager.send_request(request_mock)
 
     connection_mock.send_data.assert_called_once_with("some message")
 
@@ -322,6 +328,159 @@ async def test_send_request_no_connection(
 
     manager = _Manager(AsyncMock(), Mock(), client_name=client_name)
 
-    await manager.send_request(request_mock)
+    assert not await manager.send_request(request_mock)
 
     connection_mock.send_data.assert_not_called()
+
+
+def _device_connection(manager, replies=(), log=None):
+    """
+    Mock connection that answers requests like a device. replies says how
+    to answer each write in turn: "ok", "busy", "malformed" or None for no
+    answer; writes past the end of replies are answered "ok".
+    """
+    replies = list(replies)
+    log = [] if log is None else log
+
+    def answer(response):
+        log.append(("response", response["transactionId"]))
+        manager.incoming_json(response)
+
+    async def send_data(data):
+        body = json.loads(data)
+        log.append(("write", body["transactionId"]))
+        reply = replies.pop(0) if replies else "ok"
+        if reply is None:
+            return
+        response = {
+            "transactionId": body["transactionId"],
+            "type": body["type"],
+            "status": "ok",
+        }
+        if reply != "ok":
+            code = "DEVICE_BUSY" if reply == "busy" else "REQUEST_MALFORMED"
+            response["status"] = "error"
+            response["data"] = {"code": code}
+        asyncio.get_running_loop().call_later(0.01, answer, response)
+
+    connection = AsyncMock()
+    connection.send_data.side_effect = send_data
+    return connection, log
+
+
+def _control_requests(count):
+    """Build real state change requests for count devices."""
+    return [
+        _Request(state_change_request(f"uuid {i}", True, None))
+        for i in range(count)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_send_request_waits_for_response():
+    """Test concurrent requests are each sent after the previous response"""
+    manager = _Manager(AsyncMock(), Mock(), client_name=Mock())
+    manager.connection, log = _device_connection(manager)
+    requests = _control_requests(3)
+
+    results = await asyncio.gather(
+        *(manager.send_request(req) for req in requests)
+    )
+
+    assert results == [True, True, True]
+    expected = []
+    for req in requests:
+        transaction_id = req.get_transaction_id()
+        expected += [("write", transaction_id), ("response", transaction_id)]
+    assert log == expected
+    assert not manager.pending_responses
+
+
+@patch("pydeako.deako._manager.RESPONSE_TIMEOUT_S", 0.05)
+@pytest.mark.asyncio
+async def test_send_request_no_response():
+    """Test requests the device doesn't answer don't block the next one"""
+    manager = _Manager(AsyncMock(), Mock(), client_name=Mock())
+    manager.connection, log = _device_connection(
+        manager, replies=[None, None],
+    )
+
+    results = await asyncio.gather(
+        *(manager.send_request(req) for req in _control_requests(2))
+    )
+
+    assert results == [True, True]
+    assert [event for event, _ in log] == ["write", "write"]
+    assert not manager.pending_responses
+
+
+@patch("pydeako.deako._manager.BUSY_RETRY_DELAY_S", 0.01)
+@pytest.mark.asyncio
+async def test_send_request_retries_when_busy():
+    """Test a request answered with DEVICE_BUSY is sent again"""
+    manager = _Manager(AsyncMock(), Mock(), client_name=Mock())
+    manager.connection, log = _device_connection(
+        manager, replies=["busy", "ok"],
+    )
+    request = _control_requests(1)[0]
+
+    assert await manager.send_request(request)
+
+    first, resent = (
+        json.loads(call.args[0])
+        for call in manager.connection.send_data.call_args_list
+    )
+    first_id = first.pop("transactionId")
+    resent_id = resent.pop("transactionId")
+    assert first_id == request.get_transaction_id()
+    assert resent_id != first_id
+    assert resent == first
+    assert log == [
+        ("write", first_id),
+        ("response", first_id),
+        ("write", resent_id),
+        ("response", resent_id),
+    ]
+
+
+@patch("pydeako.deako._manager.BUSY_RETRY_DELAY_S", 0.01)
+@patch("pydeako.deako._manager.MAX_BUSY_RETRIES", 2)
+@pytest.mark.asyncio
+async def test_send_request_gives_up_when_busy():
+    """Test a request is given up after MAX_BUSY_RETRIES busy answers"""
+    manager = _Manager(AsyncMock(), Mock(), client_name=Mock())
+    manager.connection, log = _device_connection(
+        manager, replies=["busy", "busy", "busy", "ok"],
+    )
+
+    assert not await manager.send_request(_control_requests(1)[0])
+
+    assert [event for event, _ in log].count("write") == 3
+
+
+@pytest.mark.asyncio
+async def test_send_request_other_error_not_retried():
+    """Test a request answered with an error other than busy isn't resent"""
+    manager = _Manager(AsyncMock(), Mock(), client_name=Mock())
+    manager.connection, log = _device_connection(
+        manager, replies=["malformed"],
+    )
+
+    assert await manager.send_request(_control_requests(1)[0])
+
+    assert [event for event, _ in log].count("write") == 1
+
+
+@pytest.mark.asyncio
+async def test_incoming_json_resolves_pending_response():
+    """Test _Manager.incoming_json hands a response to its waiting request"""
+    callback = Mock()
+    manager = _Manager(AsyncMock(), callback, client_name=Mock())
+    pending = asyncio.get_running_loop().create_future()
+    manager.pending_responses["some id"] = pending
+    message = {"transactionId": "some id", "type": "CONTROL", "status": "ok"}
+
+    manager.incoming_json(message)
+
+    assert pending.result() == message
+    callback.assert_called_once_with(message)

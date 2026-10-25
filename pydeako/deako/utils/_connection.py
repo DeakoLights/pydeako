@@ -12,6 +12,9 @@ from ._socket import _SocketConnection
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
+# Messages to and from the device are single-line JSON separated by CRLF.
+MESSAGE_DELIMITER = "\r\n"
+
 
 class UnknownStateException(Exception):
     """Unknown state."""
@@ -61,7 +64,9 @@ class _Connection:
         """Send data to socket."""
         _LOGGER.debug("[%s] Sending data: %s", self.address, data_to_send)
         try:
-            await self.socket.send_bytes(str.encode(data_to_send))
+            await self.socket.send_bytes(
+                str.encode(data_to_send + MESSAGE_DELIMITER)
+            )
         except Exception as exc:  # pylint: disable=broad-exception-caught
             _LOGGER.error("Error sending data: %s", exc)
             self.state = ConnectionState.ERROR
@@ -88,7 +93,7 @@ class _Connection:
             self.format_name(),
             raw_string,
         )
-        messages = raw_string.strip().split("\r\n")
+        messages = raw_string.strip().split(MESSAGE_DELIMITER)
         for message_str in messages:
             self.message_buffer = self.message_buffer + message_str
             try:

@@ -2,6 +2,7 @@
 
 import json
 from typing import Callable
+from uuid import uuid4
 
 
 class _Request:
@@ -27,6 +28,17 @@ class _Request:
     def get_type(self) -> str | None:
         """Get the type of the request."""
         return self.body.get("type")
+
+    def get_transaction_id(self) -> str | None:
+        """Get the transaction id the device's response will carry."""
+        return self.body.get("transactionId")
+
+    def with_new_transaction_id(self) -> "_Request":
+        """Copy this request with a new transaction id, to send it again."""
+        return _Request(
+            {**self.body, "transactionId": str(uuid4())},
+            self.completed_callback,
+        )
 
     def complete_callback(self):
         """Call the completed request callback if applicable."""

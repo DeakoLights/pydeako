@@ -7,13 +7,15 @@ through pinging, and one to check for messages to send.
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
 
 from ..discover import DevicesNotFoundException
 from ..models import (
     device_list_request,
     device_ping_request,
     state_change_request,
+    ErrorCode,
+    ResponseStatus,
     ResponseType,
 )
 from .utils import _Connection
@@ -25,6 +27,20 @@ CONNECTED_POLLING_INTERVAL_S = 1
 CONNECTION_TIMEOUT_S = 10
 WORKER_WAIT_S = 0.5
 PING_WORKER_WAIT_S = 10
+# Max time to wait for the device to answer a request before sending the next.
+RESPONSE_TIMEOUT_S = 1.0
+# A request answered with DEVICE_BUSY is sent again after this delay.
+BUSY_RETRY_DELAY_S = 0.25
+MAX_BUSY_RETRIES = 3
+
+
+def _is_device_busy(response: dict[str, Any] | None) -> bool:
+    """Return whether a response is a DEVICE_BUSY error."""
+    if not isinstance(response, dict):
+        return False
+    if response.get("status") != ResponseStatus.ERROR:
+        return False
+    return (response.get("data") or {}).get("code") == ErrorCode.DEVICE_BUSY
 
 
 @dataclass
@@ -46,6 +62,8 @@ class _Manager:
     tasks: set[asyncio.Task]
     client_name: str | None
     state: _ManagerState
+    send_lock: asyncio.Lock
+    pending_responses: dict[str, asyncio.Future[dict[str, Any]]]
 
     def __init__(
         self,
@@ -60,6 +78,8 @@ class _Manager:
         self.tasks = set()
         self.client_name = client_name
         self.state = _ManagerState()
+        self.send_lock = asyncio.Lock()
+        self.pending_responses = {}
 
     async def init_connection(self) -> None:
         """Initialize the connection process."""
@@ -153,6 +173,10 @@ class _Manager:
 
     def incoming_json(self, incoming_json: dict) -> None:
         """Handle incoming json."""
+        transaction_id = incoming_json.get("transactionId", "")
+        pending = self.pending_responses.get(transaction_id)
+        if pending is not None and not pending.done():
+            pending.set_result(incoming_json)
         response_type = incoming_json.get("type")
         if response_type == ResponseType.PONG:
             self.pong_received = True
@@ -183,10 +207,43 @@ class _Manager:
         )
 
     async def send_request(self, req: _Request) -> bool:
-        """Send a request."""
-        if self.connection is not None:
-            await self.connection.send_data(req.get_body_str())
-            return True
+        """
+        Send a request. Requests go out one at a time: the next one is sent
+        once the device answers (or RESPONSE_TIMEOUT_S passes). Requests
+        answered with DEVICE_BUSY are retried.
+        """
+        async with self.send_lock:
+            for attempt in range(MAX_BUSY_RETRIES + 1):
+                if attempt:
+                    _LOGGER.debug("Device busy, retrying request")
+                    await asyncio.sleep(BUSY_RETRY_DELAY_S)
+                    req = req.with_new_transaction_id()
+                if self.connection is None:
+                    _LOGGER.warning("No connection to send data to")
+                    return False
+                response = await self._send_and_wait(self.connection, req)
+                if not _is_device_busy(response):
+                    return True
 
-        _LOGGER.warning("No connection to send data to")
+        _LOGGER.warning("Device still busy after %d retries", MAX_BUSY_RETRIES)
         return False
+
+    async def _send_and_wait(
+        self, connection: _Connection, req: _Request,
+    ) -> dict[str, Any] | None:
+        """Send a request and return its response, or None if none came."""
+        transaction_id = req.get_transaction_id()
+        if transaction_id is None:
+            await connection.send_data(req.get_body_str())
+            return None
+
+        response = asyncio.get_running_loop().create_future()
+        self.pending_responses[transaction_id] = response
+        try:
+            await connection.send_data(req.get_body_str())
+            return await asyncio.wait_for(response, RESPONSE_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            _LOGGER.debug("No response to request %s", transaction_id)
+            return None
+        finally:
+            self.pending_responses.pop(transaction_id, None)

@@ -45,7 +45,7 @@ async def test_send_data(
 ):
     """Test _Connection.send_data."""
     data = str(uuid4())
-    data_bytes = str.encode(data)
+    data_bytes = str.encode(data + "\r\n")
     address, name = Mock(), Mock()
     loop_mock = Mock()
     asyncio_mock.get_running_loop.return_value = loop_mock
