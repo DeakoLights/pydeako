@@ -1,7 +1,8 @@
 """Helper for sending requests to local integrations."""
 
 import json
-from typing import Callable
+from collections.abc import Callable
+from typing import Any
 
 
 class _Request:
@@ -10,11 +11,13 @@ class _Request:
     optional callback after successful send.
     """
 
-    body: dict
-    completed_callback: Callable | None = None
+    body: dict[str, Any]
+    completed_callback: Callable[[], None] | None = None
 
     def __init__(
-        self, body: dict, completed_callback: Callable | None = None
+        self,
+        body: dict[str, Any],
+        completed_callback: Callable[[], None] | None = None,
     ) -> None:
         """Initialize request with body and optional completed callback."""
         self.body = body
@@ -28,7 +31,7 @@ class _Request:
         """Get the type of the request."""
         return self.body.get("type")
 
-    def complete_callback(self):
+    def complete_callback(self) -> None:
         """Call the completed request callback if applicable."""
         if self.completed_callback is not None:
             self.completed_callback()

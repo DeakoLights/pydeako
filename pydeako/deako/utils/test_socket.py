@@ -3,7 +3,7 @@ Test the handler for socket connections.
 """
 
 from uuid import uuid4
-from mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from ._socket import _SocketConnection, NoSocketException

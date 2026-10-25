@@ -2,8 +2,8 @@
 Test the SocketConnection manager.
 """
 
+from unittest.mock import AsyncMock, Mock, patch
 import pytest
-from mock import AsyncMock, Mock, patch
 
 from ..discover import DevicesNotFoundException
 from ._manager import _Manager, CONNECTION_TIMEOUT_S

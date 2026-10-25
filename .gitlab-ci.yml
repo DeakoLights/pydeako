@@ -71,6 +71,7 @@ lint:
   script:
     - pylint pydeako
     - pycodestyle pydeako
+    - mypy pydeako
 
 test:
   <<: *test_base

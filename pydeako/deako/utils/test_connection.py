@@ -2,8 +2,8 @@
 
 import json
 from uuid import uuid4
+from unittest.mock import AsyncMock, call, Mock, patch
 import pytest
-from mock import AsyncMock, call, Mock, patch
 
 from ._connection import _Connection, ConnectionState, UnknownStateException
 from ._socket import _SocketConnection
@@ -31,7 +31,7 @@ def test_init(init_run_mock, socket_connection_mock, asyncio_mock):
     init_run_mock.assert_called_once()
 
 
-@pytest.mark.parametrize("raise_error,", [True, False])
+@pytest.mark.parametrize("raise_error", [True, False])
 @patch("pydeako.deako.utils._connection.asyncio")
 @patch(
     "pydeako.deako.utils._connection._SocketConnection",

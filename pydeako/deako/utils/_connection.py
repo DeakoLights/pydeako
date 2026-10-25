@@ -5,8 +5,9 @@ Class that manages a socket connection to a deako device.
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from enum import Enum
-from typing import Callable
+from typing import Any
 
 from ._socket import _SocketConnection
 
@@ -41,10 +42,13 @@ class _Connection:
     loop: asyncio.AbstractEventLoop
     state: ConnectionState
     socket: _SocketConnection
-    tasks: set[asyncio.Task]
+    tasks: set[asyncio.Task[None]]
 
     def __init__(
-        self, address: str, name: str, on_data_callback: Callable[[dict], None]
+        self,
+        address: str,
+        name: str,
+        on_data_callback: Callable[[dict[str, Any]], None],
     ) -> None:
         """Setup and start a socket connection."""
         self.address = address
@@ -106,7 +110,7 @@ class _Connection:
         # even if we don't care
         task = self.loop.create_task(self.run())
 
-        def remove_task(_task):
+        def remove_task(_task: asyncio.Task[None]) -> None:
             self.tasks.remove(_task)
 
         task.add_done_callback(remove_task)

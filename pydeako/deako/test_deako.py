@@ -1,9 +1,10 @@
 """Test Deako"""
 
 import json
+from typing import Any
 from uuid import uuid4
+from unittest.mock import ANY, Mock, patch
 import pytest
-from mock import ANY, Mock, patch
 
 from ._deako import Deako, FindDevicesError
 
@@ -163,7 +164,7 @@ def test_incoming_json_device_found(
     device_name = str(uuid4())
     deako = Deako(Mock())
 
-    incoming = {
+    incoming: dict[str, Any] = {
         "type": "DEVICE_FOUND",
         "data": {
             "name": device_name,
@@ -195,7 +196,7 @@ def test_incoming_json_device_found_no_capabilities(
     device_name = str(uuid4())
     deako = Deako(Mock())
 
-    incoming = {
+    incoming: dict[str, Any] = {
         "type": "DEVICE_FOUND",
         "data": {
             "name": device_name,
@@ -223,7 +224,7 @@ def test_incoming_json_event(update_state_mock, dim):
     device_id = str(uuid4())
     deako = Deako(Mock())
 
-    incoming = {
+    incoming: dict[str, Any] = {
         "type": "EVENT",
         "data": {
             "target": device_id,

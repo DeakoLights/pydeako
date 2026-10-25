@@ -2,6 +2,7 @@
 import asyncio
 
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from ..models import ResponseType
@@ -18,7 +19,7 @@ class FindDevicesError(Exception):
         self.reason = reason
         super().__init__()
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Failed to find devices: {self.reason}"
 
 
@@ -38,7 +39,11 @@ class Deako:
     devices: dict[str, Any]
     expected_devices: int
 
-    def __init__(self, get_address, client_name: str | None = None) -> None:
+    def __init__(
+        self,
+        get_address: Callable[[], Awaitable[tuple[str, str]]],
+        client_name: str | None = None,
+    ) -> None:
         """Init manager for Deako local integration."""
         self.connection_manager = _Manager(
             get_address,
@@ -64,12 +69,14 @@ class Deako:
         if "callback" in self.devices[uuid]:
             self.devices[uuid]["callback"]()
 
-    def set_state_callback(self, uuid: str, callback) -> None:
+    def set_state_callback(
+        self, uuid: str, callback: Callable[[], None]
+    ) -> None:
         """Add a state update listener."""
         if uuid in self.devices:
             self.devices[uuid]["callback"] = callback
 
-    def incoming_json(self, in_data: dict) -> None:
+    def incoming_json(self, in_data: dict[str, Any]) -> None:
         """Parse incoming socket data which is json."""
         try:
             if in_data["type"] == ResponseType.DEVICE_LIST:
@@ -122,13 +129,13 @@ class Deako:
         """Close the connection."""
         self.connection_manager.close()
 
-    def get_devices(self) -> dict:
+    def get_devices(self) -> dict[str, Any]:
         """Get the devices that have been recorded."""
         return self.devices
 
     async def find_devices(
         self,
-        timeout=DEFAULT_DEVICE_LIST_TIMEOUT_S,
+        timeout: float = DEFAULT_DEVICE_LIST_TIMEOUT_S,
     ) -> None:
         """Request the device list."""
         _LOGGER.info("Finding devices")
@@ -175,7 +182,7 @@ class Deako:
     ) -> None:
         """Add control request to queue."""
 
-        def completed_callback():
+        def completed_callback() -> None:
             self.update_state(uuid, power, dim)
 
         await self.connection_manager.send_state_change(
@@ -189,16 +196,18 @@ class Deako:
             return None
 
         # name should exist if we have data on this device
-        return device_data["name"]
+        name: str = device_data["name"]
+        return name
 
-    def get_state(self, uuid: str) -> dict | None:
+    def get_state(self, uuid: str) -> dict[str, Any] | None:
         """Get a device's state by uuid."""
         device_data = self.devices.get(uuid)
         if device_data is None:
             return None
 
         # state should exist if we have data on this device
-        return device_data["state"]
+        state: dict[str, Any] = device_data["state"]
+        return state
 
     def is_dimmable(self, uuid: str) -> bool | None:
         """Get whether a device is dimmable by uuid."""
@@ -207,4 +216,5 @@ class Deako:
             return None
 
         # dimmable should exist if we have data on this device
-        return device_data["dimmable"]
+        dimmable: bool = device_data["dimmable"]
+        return dimmable

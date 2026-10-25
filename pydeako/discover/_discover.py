@@ -3,6 +3,7 @@ Deako device discovery via zeroconf.
 """
 
 from asyncio import sleep
+from collections.abc import Callable
 import logging
 import socket
 
@@ -22,11 +23,10 @@ class DevicesNotFoundException(Exception):
 
     def __init__(
         self,
-        *args,
-        msg=f"No devices found via {DEAKO_TYPE}",
-        **kwargs,
-    ):
-        super().__init__(msg, *args, **kwargs)
+        *args: object,
+        msg: str = f"No devices found via {DEAKO_TYPE}",
+    ) -> None:
+        super().__init__(msg, *args)
 
 
 class DeakoDiscoverer(ServiceBrowser):
@@ -76,7 +76,9 @@ class DeakoListener(ServiceListener):
     """Listener class that satisfies the interface for zeroconf browsers."""
 
     def __init__(
-        self, device_address_callback, device_address_removed_callback
+        self,
+        device_address_callback: Callable[[str, str], None],
+        device_address_removed_callback: Callable[[str], None],
     ) -> None:
         """Save callbacks."""
         self.device_address_callback = device_address_callback

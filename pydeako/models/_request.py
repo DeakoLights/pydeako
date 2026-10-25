@@ -12,7 +12,7 @@ def __base_request(
     destination: str | None = None,
     source: str | None = None,
     transaction_id: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     return {
         "transactionId": transaction_id or str(uuid4()),
         "dst": destination or _const.DESTINATION,
@@ -20,7 +20,7 @@ def __base_request(
     }
 
 
-def device_ping_request(**kwargs) -> dict:
+def device_ping_request(**kwargs: str | None) -> dict[str, Any]:
     """Generate a ping request."""
     return {
         **__base_request(**kwargs),
@@ -28,7 +28,7 @@ def device_ping_request(**kwargs) -> dict:
     }
 
 
-def device_list_request(**kwargs) -> dict:
+def device_list_request(**kwargs: str | None) -> dict[str, Any]:
     """Generate a device list request."""
     return {
         **__base_request(**kwargs),
@@ -37,10 +37,10 @@ def device_list_request(**kwargs) -> dict:
 
 
 def state_change_request(
-    device_uuid: str, power: bool, dim: int | None, **kwargs
+    device_uuid: str, power: bool, dim: int | None, **kwargs: str | None
 ) -> dict[str, Any]:
     """Generate a state change request."""
-    state: dict[str, str | int] = {
+    state: dict[str, bool | int] = {
         "power": power,
     }
     if dim is not None:

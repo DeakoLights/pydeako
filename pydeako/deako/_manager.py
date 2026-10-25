@@ -6,8 +6,9 @@ through pinging, and one to check for messages to send.
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any
 
 from ..discover import DevicesNotFoundException
 from ..models import (
@@ -40,17 +41,17 @@ class _ManagerState:
 class _Manager:
     """Manage the socket connection to Deako local integrations."""
 
-    maintain_worker: asyncio.Task | None = None
-    worker: asyncio.Task | None = None
+    maintain_worker: asyncio.Task[None] | None = None
+    worker: asyncio.Task[None] | None = None
     connection: _Connection | None = None
-    tasks: set[asyncio.Task]
+    tasks: set[asyncio.Task[None]]
     client_name: str | None
     state: _ManagerState
 
     def __init__(
         self,
-        get_address,
-        incoming_json_callback,
+        get_address: Callable[[], Awaitable[tuple[str, str]]],
+        incoming_json_callback: Callable[[dict[str, Any]], None],
         client_name: str | None = None,
     ) -> None:
         """Initialize with get address function and incoming json callback."""
@@ -114,7 +115,7 @@ class _Manager:
             self.connection.close()
             self.connection = None
 
-    def create_connection_task(self):
+    def create_connection_task(self) -> None:
         """Create an async task to initiate connection."""
         # RUF006
         # pylint: disable-next=line-too-long
@@ -123,7 +124,7 @@ class _Manager:
         task = asyncio.create_task(self.init_connection())
         self.tasks.add(task)
 
-        def remove_task(_task):
+        def remove_task(_task: asyncio.Task[None]) -> None:
             try:
                 self.tasks.remove(_task)
             except KeyError:
@@ -151,7 +152,7 @@ class _Manager:
                 self.create_connection_task()
                 break
 
-    def incoming_json(self, incoming_json: dict) -> None:
+    def incoming_json(self, incoming_json: dict[str, Any]) -> None:
         """Handle incoming json."""
         response_type = incoming_json.get("type")
         if response_type == ResponseType.PONG:
@@ -167,10 +168,10 @@ class _Manager:
 
     async def send_state_change(
         self,
-        uuid,
-        power,
-        dim=None,
-        completed_callback: Callable | None = None,
+        uuid: str,
+        power: bool,
+        dim: int | None = None,
+        completed_callback: Callable[[], None] | None = None,
     ) -> None:
         """Send a state change request."""
         await self.send_request(

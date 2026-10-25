@@ -2,7 +2,7 @@
 Test the discovery client, patching the address pool and zeroconf lib.
 """
 from uuid import uuid4
-from mock import Mock, patch
+from unittest.mock import Mock, patch
 import pytest
 from zeroconf import Zeroconf
 
